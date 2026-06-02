@@ -1,0 +1,20 @@
+{
+  "name": "custom_rust_plus",
+  "version": "1.0.0",
+  "description": "Local Rust+ companion backend and GUI",
+  "private": true,
+  "scripts": {
+    "start": "node Core/main.js",
+    "test:store": "node Tests/StoreBehaviorTest.js",
+    "test:teamchat": "node Tests/TeamChatTest.js",
+    "test:api": "node Tests/ApiIntegrationTest.js",
+    "test:api:coverage": "node Tests/ApiCoverageTest.js",
+    "test:rust-routes": "node Tests/RustDependentRoutesTest.js",
+    "test:all": "npm run test:store && npm run test:api && npm run test:api:coverage && npm run test:rust-routes",
+    "test:all:with-rust": "npm run test:all && npm run test:teamchat"
+  },
+  "dependencies": {
+    "@liamcottle/push-receiver": "^0.0.3",
+    "@liamcottle/rustplus.js": "^2.5.0"
+  }
+}

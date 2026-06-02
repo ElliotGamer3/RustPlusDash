@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust+ Dashboard</title>
+    <style>
+        :root {
+            --bg: #eee9de;
+            --surface: #fffaf0;
+            --surface2: rgba(255,250,240,0.97);
+            --ink: #231f14;
+            --muted: #6b5b3e;
+            --line: #d4c4a8;
+            --green: #2d6b55;
+            --green2: #1c4f3d;
+            --green-bg: rgba(45,107,85,0.1);
+            --amber: #b87014;
+            --red: #9e1d20;
+            --red-bg: rgba(158,29,32,0.08);
+            --shadow: 0 2px 10px rgba(35,31,20,0.1);
+            --radius: 12px;
+            --radius-sm: 8px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 14px;
+            color: var(--ink);
+            background: var(--bg);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Topbar ──────────────────────────────────────────── */
+        .topbar {
+            background: var(--green2);
+            color: #f0ece1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            height: 50px;
+            gap: 16px;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .topbar-brand {
+            font-weight: 700;
+            font-size: 1rem;
+            letter-spacing: 0.06em;
+            white-space: nowrap;
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .topbar-right label {
+            color: rgba(240,236,225,0.7);
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+
+        .topbar select {
+            background: rgba(255,255,255,0.12);
+            border: 1px solid rgba(255,255,255,0.22);
+            border-radius: var(--radius-sm);
+            color: #f0ece1;
+            padding: 5px 10px;
+            font: inherit;
+            font-size: 0.88rem;
+            max-width: 220px;
+            cursor: pointer;
+        }
+
+        .topbar select option { background: #1c4f3d; }
+
+        .status-dot {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: #888;
+            flex-shrink: 0;
+            transition: background 0.3s;
+        }
+
+        .status-dot.connected    { background: #4caf50; }
+        .status-dot.connecting   { background: #ff9800; animation: blink 1s infinite; }
+        .status-dot.disconnected { background: #f44336; }
+        .status-dot.error        { background: #f44336; }
+
+        @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.25; } }
+
+        /* ── Tab nav ─────────────────────────────────────────── */
+        .tab-nav {
+            display: flex;
+            background: var(--surface);
+            border-bottom: 2px solid var(--line);
+            padding: 0 12px;
+            overflow-x: auto;
+            flex-shrink: 0;
+            scrollbar-width: none;
+        }
+
+        .tab-nav::-webkit-scrollbar { display: none; }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: var(--muted);
+            padding: 12px 16px;
+            cursor: pointer;
+            font: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            white-space: nowrap;
+            border-radius: 0;
+            margin-bottom: -2px;
+            transition: color 0.15s;
+        }
+
+        .tab-btn:hover { color: var(--ink); }
+        .tab-btn.active { color: var(--green2); border-bottom-color: var(--green); }
+
+        /* ── Panes ───────────────────────────────────────────── */
+        .tab-pane { display: none; padding: 16px; max-width: 1440px; margin: 0 auto; width: 100%; }
+        .tab-pane.active { display: block; }
+
+        /* ── Grid helpers ────────────────────────────────────── */
+        .cols   { display: grid; gap: 14px; }
+        .col-2  { grid-template-columns: 1fr 1fr; }
+        .col-3  { grid-template-columns: 1fr 1fr 1fr; }
+        .col-auto { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+        .col-auto-md { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+        @media (max-width: 720px) {
+            .col-2, .col-3 { grid-template-columns: 1fr; }
+        }
+
+        /* ── Card ────────────────────────────────────────────── */
+        .card {
+            background: var(--surface2);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            box-shadow: var(--shadow);
+        }
+
+        .card-title {
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .card-big { font-size: 2.2rem; font-weight: 700; line-height: 1; }
+
+        /* ── Device card ─────────────────────────────────────── */
+        .dcard {
+            background: var(--surface2);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .dcard-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .dcard-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .dcard-sub {
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+
+        .group-editor-head {
+            align-items: flex-end;
+        }
+
+        .group-name-field {
+            flex: 1;
+            min-width: 220px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            display: grid;
+            gap: 6px;
+        }
+
+        .group-name-field input {
+            width: 100%;
+            font: inherit;
+            font-size: 0.92rem;
+            color: var(--ink);
+            padding: 7px 10px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--line);
+            background: #fff;
+        }
+
+        .group-device-list {
+            max-height: 220px;
+            overflow: auto;
+        }
+
+        .group-editor-body {
+            display: none;
+            gap: 10px;
+        }
+
+        .group-editor.is-editing .group-editor-body {
+            display: grid;
+        }
+
+        .group-editor-edit-actions {
+            display: none;
+        }
+
+        .group-editor.is-editing .group-editor-edit-actions {
+            display: flex;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            padding: 2px 4px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            color: var(--muted);
+            line-height: 1;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+        .icon-btn:hover { color: var(--green2); background: rgba(0,0,0,.06); }
+
+        .dcard-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        /* ── Section header ──────────────────────────────────── */
+        .sec-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .sec-head h2 { font-size: 0.98rem; font-weight: 700; }
+
+        /* ── Toggle ──────────────────────────────────────────── */
+        .toggle-wrap { display: flex; align-items: center; gap: 10px; }
+
+        .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+        .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            border-radius: 11px;
+            background: var(--line);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle input:checked + .toggle-track { background: var(--green); }
+
+        .toggle-track::after {
+            content: '';
+            position: absolute;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: white;
+            top: 3px; left: 3px;
+            transition: left 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .toggle input:checked + .toggle-track::after { left: 21px; }
+
+        /* ── Pill ────────────────────────────────────────────── */
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 0.74rem;
+            font-weight: 700;
+            white-space: nowrap;
+            letter-spacing: 0.03em;
+        }
+
+        .pill.on      { background: rgba(45,107,85,0.14); color: var(--green2); }
+        .pill.off     { background: rgba(107,91,62,0.12); color: var(--muted); }
+        .pill.unknown { background: rgba(184,112,20,0.12); color: var(--amber); }
+        .pill.alert   { background: var(--red-bg); color: var(--red); }
+        .pill.live    { background: rgba(45,107,85,0.14); color: var(--green2); }
+
+        /* ── Buttons ─────────────────────────────────────────── */
+        button {
+            font: inherit;
+            font-size: 0.86rem;
+            font-weight: 600;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-sm);
+            padding: 6px 12px;
+            cursor: pointer;
+            background: var(--surface);
+            color: var(--ink);
+            white-space: nowrap;
+            transition: background 0.12s, border-color 0.12s;
+        }
+
+        button:hover { background: #ede5d4; }
+
+        button.primary {
+            background: var(--green);
+            color: #f0ece1;
+            border-color: var(--green);
+        }
+
+        button.primary:hover { background: var(--green2); border-color: var(--green2); }
+
+        button.danger {
+            background: transparent;
+            color: var(--red);
+            border-color: rgba(158,29,32,0.28);
+            padding: 5px 9px;
+        }
+
+        button.danger:hover { background: var(--red-bg); }
+
+        /* ── Forms ───────────────────────────────────────────── */
+        .form-stack { display: grid; gap: 10px; }
+        .form-row   { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+
+        .field {
+            display: grid;
+            gap: 4px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--muted);
+            letter-spacing: 0.02em;
+        }
+
+        input, select, textarea {
+            font: inherit;
+            font-size: 0.9rem;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-sm);
+            padding: 7px 10px;
+            background: #fffdf8;
+            color: var(--ink);
+            width: 100%;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: 2px solid var(--green);
+            outline-offset: 1px;
+            border-color: transparent;
+        }
+
+        textarea { min-height: 65px; resize: vertical; }
+
+        /* ── Table ───────────────────────────────────────────── */
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+
+        .data-table th {
+            text-align: left;
+            padding: 5px 9px;
+            font-size: 0.73rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--muted);
+            border-bottom: 2px solid var(--line);
+            white-space: nowrap;
+        }
+
+        .data-table td {
+            padding: 6px 9px;
+            border-bottom: 1px solid rgba(107,91,62,0.1);
+        }
+
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+        /* ── Notification feed ───────────────────────────────── */
+        .notif-feed {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            max-height: 340px;
+            overflow-y: auto;
+        }
+
+        .notif-item {
+            padding: 7px 11px;
+            border-radius: var(--radius-sm);
+            background: var(--surface2);
+            border: 1px solid var(--line);
+            font-size: 0.84rem;
+        }
+
+        .notif-item.alarm       { border-left: 3px solid var(--red); }
+        .notif-item.requirement { border-left: 3px solid var(--amber); }
+
+        /* ── Checklist ───────────────────────────────────────── */
+        .check-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            max-height: 170px;
+            overflow-y: auto;
+        }
+
+        .check-list label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.87rem;
+            font-weight: 400;
+            color: var(--ink);
+            cursor: pointer;
+        }
+
+        .check-list input[type=checkbox] { width: auto; flex-shrink: 0; }
+
+        /* ── Misc ────────────────────────────────────────────── */
+        .empty {
+            text-align: center;
+            color: var(--muted);
+            padding: 28px 16px;
+            font-size: 0.88rem;
+        }
+
+        .divider { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
+
+        .info-row {
+            display: flex;
+            gap: 14px;
+            flex-wrap: wrap;
+            font-size: 0.82rem;
+            color: var(--muted);
+            align-items: center;
+        }
+
+        input[type=range] { padding: 4px 0; accent-color: var(--green); }
+
+        .hint { font-size: 0.78rem; color: var(--muted); font-weight: 400; }
+    </style>
+</head>
+<body>
+
+<!-- ── Topbar ──────────────────────────────────────────────────── -->
+<header class="topbar">
+    <span class="topbar-brand">&#9881; Rust+ Dashboard</span>
+    <div class="topbar-right">
+        <label for="server-select">Server</label>
+        <select id="server-select" title="Active server"></select>
+        <span id="conn-dot" class="status-dot" title="Connection status"></span>
+    </div>
+</header>
+
+<!-- ── Tab navigation ─────────────────────────────────────────── -->
+<nav class="tab-nav" role="tablist">
+    <button type="button" class="tab-btn active" data-tab="overview">Overview</button>
+    <button type="button" class="tab-btn"        data-tab="switches">Switches</button>
+    <button type="button" class="tab-btn"        data-tab="cameras">Cameras</button>
+    <button type="button" class="tab-btn"        data-tab="storage">Storage</button>
+    <button type="button" class="tab-btn"        data-tab="alarms">Alarms</button>
+    <button type="button" class="tab-btn"        data-tab="automation">Automation</button>
+    <button type="button" class="tab-btn"        data-tab="settings">Settings</button>
+</nav>
+
+<!-- ════════════════════════════════════════════════════════════════
+     OVERVIEW
+════════════════════════════════════════════════════════════════ -->
+<div id="tab-overview" class="tab-pane active">
+    <div class="cols col-3" style="margin-bottom:14px;">
+        <div class="card">
+            <div class="card-title">Smart Switches</div>
+            <div class="card-big" id="ov-switch-count">—</div>
+            <div class="info-row" style="margin-top:8px;" id="ov-switch-detail"></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Total Devices</div>
+            <div class="card-big" id="ov-device-count">—</div>
+            <div class="info-row" style="margin-top:8px;" id="ov-device-detail"></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Groups</div>
+            <div class="card-big" id="ov-group-count">—</div>
+            <div class="info-row" style="margin-top:8px;" id="ov-group-detail"></div>
+        </div>
+    </div>
+
+    <div class="cols col-2">
+        <div class="card">
+            <div class="sec-head">
+                <h2>Recent Notifications</h2>
+                <span id="ov-notif-count" class="pill off">0</span>
+            </div>
+            <div id="ov-notif-feed" class="notif-feed">
+                <div class="empty">No notifications yet</div>
+            </div>
+        </div>
+
+        <div>
+            <div class="card" style="margin-bottom:14px;">
+                <h2 style="margin-bottom:10px;">Send Team Message</h2>
+                <form id="team-message-form" class="form-stack">
+                    <label class="field">Message
+                        <input type="text" name="message" placeholder="Say something to your team…" required />
+                    </label>
+                    <button type="submit" class="primary">Send</button>
+                </form>
+            </div>
+            <div class="card">
+                <div class="card-title">Request Queue</div>
+                <div id="ov-queue" class="info-row"><span>No requests queued</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     SWITCHES
+════════════════════════════════════════════════════════════════ -->
+<div id="tab-switches" class="tab-pane">
+    <div class="cols col-2">
+        <div>
+            <div class="sec-head">
+                <h2>Smart Switches</h2>
+                <button class="primary" data-action="goto-add-device" data-type="switch">+ Add Switch</button>
+            </div>
+            <div id="switch-cards" class="cols col-auto">
+                <div class="empty">No switches registered. Add one in Settings.</div>
+            </div>
+        </div>
+        <div>
+            <div class="sec-head">
+                <h2>Switch Groups</h2>
+                <button class="primary" data-action="goto-add-group" data-type="switch-group">+ New Group</button>
+            </div>
+            <div id="switch-group-cards" class="cols col-auto-md">
+                <div class="empty">No switch groups. Create one in Settings.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     CAMERAS
+════════════════════════════════════════════════════════════════ -->
+<div id="tab-cameras" class="tab-pane">
+    <div class="cols col-2">
+        <div>
+            <div class="sec-head">
+                <h2>Cameras &amp; Turrets</h2>
+                <button class="primary" data-action="goto-add-device" data-type="camera">+ Add Camera</button>
+            </div>
+            <div id="camera-cards" class="cols col-auto">
+                <div class="empty">No cameras or turrets registered. Add one in Settings.</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-bottom:14px;">Rotation Control</h2>
+            <div class="form-stack">
+                <label class="field">Rotation group
+                    <select id="rotation-group-select">
+                        <option value="">— No camera/turret groups yet —</option>
+                    </select>
+                </label>
+                <label class="field">
+                    Interval &nbsp;<span id="rotation-interval-label" class="hint">5.0s</span>
+                    <input type="range" id="rotation-interval" min="1000" max="30000" step="500" value="5000" />
+                </label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button id="rotation-start-btn" class="primary">Start</button>
+                    <button id="rotation-pause-btn">Pause</button>
+                    <button id="rotation-resume-btn">Resume</button>
+                </div>
+                <hr class="divider" style="margin:6px 0;" />
+                <label class="field">Jump to camera
+                    <select id="rotation-device-select">
+                        <option value="">— Pick a group first —</option>
+                    </select>
+                </label>
+                <button id="rotation-select-btn">Set Active Camera</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="sec-head"><h2>Camera Groups</h2></div>
+            <div id="camera-group-cards" class="cols col-auto-md">
+                <div class="empty">No camera groups yet. Create one in Settings.</div>
+            </div>
+            <hr class="divider" style="margin:14px 0;" />
+            <div class="sec-head"><h2>Turret Groups</h2></div>
+            <div id="turret-group-cards" class="cols col-auto-md">
+                <div class="empty">No turret groups yet. Create one in Settings.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     STORAGE
+════════════════════════════════════════════════════════════════ -->
+<div id="tab-storage" class="tab-pane">
+    <div class="sec-head">
+        <h2>Storage Monitor</h2>
+        <button class="primary" data-action="goto-add-group" data-type="storage-group">+ New Group</button>
+    </div>
+    <div style="max-width:360px;margin-bottom:16px;">
+        <label class="field">Storage group
+            <select id="storage-group-select">
+                <option value="">— Select a group —</option>
+            </select>
+        </label>
+    </div>
+    <div id="storage-content" class="cols col-2">
+        <div class="empty" style="grid-column:1/-1;">Select a storage group above to view metrics</div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+        <div class="sec-head"><h2>Storage Groups</h2></div>
+        <div id="storage-group-cards" class="cols col-auto-md">
+            <div class="empty">No storage groups yet. Create one in Settings.</div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     ALARMS
+════════════════════════════════════════════════════════════════ -->
+<div id="tab-alarms" class="tab-pane">
+    <div class="cols col-2">
+        <div>
+            <div class="sec-head">
+                <h2>Alarm Devices</h2>
+                <button class="primary" data-action="goto-add-device" data-type="alarm">+ Add Alarm</button>
+            </div>
+            <div id="alarm-cards" class="cols col-auto">
+                <div class="empty">No alarm devices registered. Add one in Settings.</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-bottom:14px;">Consolidation Settings</h2>
+            <form id="alarm-config-form" class="form-stack">
+                <label class="field">Alarm group
+                    <select id="alarm-group-select" name="groupId">
+                        <option value="">— No alarm groups yet —</option>
+                    </select>
+                </label>
+                <div class="form-row">
+                    <label class="field">Enabled
+                        <select name="enabled">
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </label>
+                    <label class="field">Window (ms)
+                        <input type="number" name="windowMs" value="2000" min="200" step="100" />
+                    </label>
+                </div>
+                <label class="field">Exclude from consolidation</label>
+                <div id="alarm-exclusion-list" class="check-list">
+                    <span class="hint">Select a group first</span>
+                </div>
+                <button type="submit" class="primary">Save</button>
+            </form>
+
+            <div class="card" style="margin-top:16px;">
+                <div class="sec-head"><h2>Alarm Groups</h2></div>
+                <div id="alarm-group-cards" class="cols col-auto-md">
+                    <div class="empty">No alarm groups yet. Create one in Settings.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     AUTOMATION
+════════════════════════════════════════════════════════════════ -->
+<div id="tab-automation" class="tab-pane">
+    <div class="cols col-2">
+        <div>
+            <div class="sec-head"><h2>Requirements</h2></div>
+            <div id="requirement-cards" class="cols" style="gap:8px;">
+                <div class="empty">No requirements configured</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-bottom:14px;">New Requirement</h2>
+            <form id="requirement-form" class="form-stack">
+                <label class="field">Storage group
+                    <select id="req-group-select" name="groupId" required>
+                        <option value="">— Select group —</option>
+                    </select>
+                </label>
+                <div class="form-row">
+                    <label class="field">Watch
+                        <select name="targetScope" id="req-scope">
+                            <option value="group">Total quantity</option>
+                            <option value="item">Specific item</option>
+                            <option value="category">Category</option>
+                        </select>
+                    </label>
+                    <label class="field" id="req-target-wrap">Item / category
+                        <input type="text" name="targetValue" placeholder="e.g. sulfur_ore" />
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label class="field">Condition
+                        <select name="operator">
+                            <option value="below">Falls below</option>
+                            <option value="above">Exceeds</option>
+                            <option value="belowOrEqual">&#8804;</option>
+                            <option value="aboveOrEqual">&#8805;</option>
+                        </select>
+                    </label>
+                    <label class="field">Threshold
+                        <input type="number" name="threshold" required min="0" />
+                    </label>
+                </div>
+                <label class="field">Notification message
+                    <input type="text" name="notifyMessage" placeholder="Low on sulfur!" />
+                </label>
+                <button type="submit" class="primary">Create Requirement</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     SETTINGS
+════════════════════════════════════════════════════════════════ -->
+<div id="tab-settings" class="tab-pane">
+    <div class="cols col-2">
+
+        <!-- Left: Servers -->
+        <div class="card">
+            <h2 style="margin-bottom:12px;">Servers</h2>
+            <div id="settings-server-list" class="cols" style="gap:8px;margin-bottom:14px;"></div>
+            <hr class="divider" />
+            <h2 style="margin:0 0 12px;">Add Server</h2>
+            <form id="pair-server-form" class="form-stack">
+                <div class="form-row">
+                    <label class="field">Name<input type="text" name="name" required /></label>
+                    <label class="field">Host<input type="text" name="host" required /></label>
+                </div>
+                <div class="form-row">
+                    <label class="field">Port<input type="text" name="port" required /></label>
+                    <label class="field">Player ID<input type="text" name="playerId" required /></label>
+                </div>
+                <label class="field">Player Token
+                    <input type="password" name="playerToken" required autocomplete="off" />
+                </label>
+                <label class="field" style="display:flex;flex-direction:row;align-items:center;gap:8px;font-weight:400;">
+                    <input type="checkbox" name="isDefault" style="width:auto;" />
+                    Set as default server
+                </label>
+                <button type="submit" class="primary">Add Server</button>
+            </form>
+            <hr class="divider" />
+            <h2 style="margin:0 0 12px;">Import Config File</h2>
+            <form id="import-config-form" class="form-stack">
+                <label class="field">Path to rustplus.config.json
+                    <input type="text" name="configPath" placeholder="rustplus.config.json" />
+                </label>
+                <button type="submit" class="primary">Import</button>
+            </form>
+        </div>
+
+        <!-- Right: Devices & Groups -->
+        <div class="card">
+            <h2 style="margin-bottom:12px;">Register Device</h2>
+            <form id="device-form" class="form-stack">
+                <div class="form-row">
+                    <label class="field">Type
+                        <select name="type" id="device-type-select">
+                            <option value="switch">Smart Switch</option>
+                            <option value="alarm">Smart Alarm</option>
+                            <option value="storage-monitor">Storage Monitor</option>
+                            <option value="camera">Camera</option>
+                            <option value="turret">Turret</option>
+                        </select>
+                    </label>
+                    <label class="field">Name
+                        <input type="text" name="name" placeholder="My device" />
+                    </label>
+                </div>
+                <label class="field" id="entity-id-field">Entity ID
+                    <input type="text" name="entityId" placeholder="e.g. 1234567" />
+                </label>
+                <label class="field" id="camera-id-field">Camera ID
+                    <input type="text" name="cameraId" placeholder="e.g. OILRIG1" />
+                </label>
+                <button type="submit" class="primary">Register Device</button>
+            </form>
+
+            <hr class="divider" />
+
+            <h2 style="margin-bottom:12px;">Create Group</h2>
+            <form id="group-form" class="form-stack">
+                <div class="form-row">
+                    <label class="field">Type
+                        <select id="group-type-select" name="type">
+                            <option value="switch-group">Switch Group</option>
+                            <option value="alarm-group">Alarm Group</option>
+                            <option value="camera-group">Camera Group</option>
+                            <option value="turret-group">Turret Group</option>
+                            <option value="storage-group">Storage Group</option>
+                        </select>
+                    </label>
+                    <label class="field">Name
+                        <input type="text" name="name" required />
+                    </label>
+                </div>
+                <label class="field">Devices to include</label>
+                <div id="group-device-checklist" class="check-list">
+                    <span class="hint">Choose a group type to see matching devices</span>
+                </div>
+                <button type="submit" class="primary">Create Group</button>
+            </form>
+
+            <hr class="divider" />
+
+            <h2 style="margin-bottom:12px;">Pairing Listener</h2>
+            <div class="dcard" style="margin-bottom:10px;">
+                <div class="dcard-head">
+                    <span class="dcard-name">Listener Status</span>
+                    <span id="pairing-listener-pill" class="pill off">Stopped</span>
+                </div>
+                <div id="pairing-listener-meta" class="dcard-sub">No listener activity yet.</div>
+            </div>
+
+            <form id="pairing-listener-form" class="form-stack">
+                <label class="field">Config path
+                    <input type="text" id="pairing-config-path" name="configPath" placeholder="rustplus.config.json" />
+                </label>
+                <label class="field" style="display:flex;flex-direction:row;align-items:center;gap:8px;font-weight:400;">
+                    <input type="checkbox" id="pairing-auto-pair" name="autoPair" checked style="width:auto;" />
+                    Auto-apply paired server/device from notification
+                </label>
+                <div class="dcard-actions">
+                    <button type="button" class="primary" id="pairing-start-btn">Start Listener</button>
+                    <button type="button" id="pairing-stop-btn">Stop Listener</button>
+                    <button type="button" id="pairing-refresh-btn">Refresh Status</button>
+                </div>
+            </form>
+
+            <div class="dcard" style="margin-top:10px;">
+                <div class="dcard-head">
+                    <span class="dcard-name">Listener Ingest Test</span>
+                </div>
+                <div class="dcard-sub">Send sample server/entity payloads through ingest endpoint.</div>
+                <div class="dcard-actions">
+                    <button type="button" id="pairing-test-server-btn">Send Test Server Pair</button>
+                    <button type="button" id="pairing-test-entity-btn">Send Test Entity Pair</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

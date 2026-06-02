@@ -1,0 +1,10 @@
+# Ignore the config file that contains sensitive information
+# Ignore node_modules directory
+node_modules/
+
+# Runtime state — contains sensitive credentials (playerToken, playerId, server IP)
+# Auto-recreated on startup if missing
+Core/data/app-state.json
+
+# RustPlus auth config — contains FCM credentials, auth token, and push token
+rustplus.config.json
