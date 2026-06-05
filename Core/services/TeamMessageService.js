@@ -20,6 +20,11 @@ class TeamMessageService {
             sentAt: new Date().toISOString()
         };
     }
+
+    async getMessageHistory({ serverId }) {
+        const targetServerId = serverId || this.store.getActiveServer().id;
+        return await this.connectionManager.getTeamMessageHistory(targetServerId);
+    }
 }
 
 module.exports = TeamMessageService;

@@ -1,0 +1,2 @@
+# Force Wipe Instructions
+- Whenever there is a force wipe, teh FCM token for servers may become invalid. When this happebns checking the connection can say that connection is working but no info is being received. To Fix Run FCM Register and FCM Listen to get a new token. Proto errors should be reported so the postinstall script can be updated. To apply updates to the proto, run the postinstall npm script which will apply the necessary patches to the proto file.

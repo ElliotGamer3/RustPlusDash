@@ -125,6 +125,26 @@ class PairingService {
             return this.#applyEntityPairing(normalized, source);
         }
 
+        if (normalized.type === 'login') {
+            const session = this.store.addPairingSession({
+                type: 'pairing-notification-login',
+                status: 'ignored',
+                details: {
+                    source,
+                    reason: 'informational notification'
+                }
+            });
+
+            this.eventBus.emit('pairing:updated', session);
+
+            return {
+                applied: false,
+                ignored: true,
+                type: 'login',
+                session
+            };
+        }
+
         throw new Error(`Unsupported pairing notification type: ${normalized.type}`);
     }
 

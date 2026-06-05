@@ -1,9 +1,10 @@
 {
   "name": "custom_rust_plus",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Local Rust+ companion backend and GUI",
   "private": true,
   "scripts": {
+    "postinstall": "node scripts/patch-proto.js",
     "start": "node Core/main.js",
     "test:store": "node Tests/StoreBehaviorTest.js",
     "test:teamchat": "node Tests/TeamChatTest.js",

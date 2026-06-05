@@ -138,7 +138,8 @@ async function run() {
         await api(`${baseUrl}/api/groups/${createdGroupId}`, 'DELETE');
         createdGroupId = null;
 
-        await api(`${baseUrl}/api/devices/${createdDeviceId}`, 'DELETE');
+        const cleared = await api(`${baseUrl}/api/servers/default-server/devices`, 'DELETE');
+        assert.ok(Object.prototype.hasOwnProperty.call(cleared, 'removed'), 'clear devices response should include removed count');
         createdDeviceId = null;
 
         await api(`${baseUrl}/api/servers/${createdServerId}`, 'DELETE');

@@ -189,6 +189,7 @@ class AppStateStore {
 
     addServer({ name, host, port, playerId, playerToken, isDefault = false }) {
         return this.#commit((draft) => {
+            const activeServer = draft.servers.find((server) => server.id === draft.settings.activeServerId) || null;
             const server = {
                 id: randomUUID(),
                 name: String(name || '').trim() || `Server ${draft.servers.length + 1}`,
@@ -213,7 +214,7 @@ class AppStateStore {
 
             draft.servers.push(server);
 
-            if (!draft.settings.activeServerId) {
+            if (!draft.settings.activeServerId || !this.#hasConnectionInfo(activeServer)) {
                 draft.settings.activeServerId = server.id;
             }
 
@@ -279,6 +280,26 @@ class AppStateStore {
                 deviceIds: group.deviceIds.filter((id) => id !== deviceId)
             }));
             delete draft.storageHistory[deviceId];
+        });
+    }
+
+    removeDevicesByServer(serverId) {
+        return this.#commit((draft) => {
+            const removedDeviceIds = draft.devices
+                .filter((device) => device.serverId === serverId)
+                .map((device) => device.id);
+
+            draft.devices = draft.devices.filter((device) => device.serverId !== serverId);
+            draft.groups = draft.groups.map((group) => ({
+                ...group,
+                deviceIds: group.deviceIds.filter((id) => !removedDeviceIds.includes(id))
+            }));
+
+            for (const deviceId of removedDeviceIds) {
+                delete draft.storageHistory[deviceId];
+            }
+
+            return removedDeviceIds.length;
         });
     }
 
@@ -455,6 +476,19 @@ class AppStateStore {
 
     getStorageHistory(deviceId) {
         return this.state.storageHistory[deviceId] || [];
+    }
+
+    #hasConnectionInfo(server) {
+        if (!server) {
+            return false;
+        }
+
+        return Boolean(
+            String(server.host || '').trim() &&
+            String(server.port || '').trim() &&
+            String(server.playerId || '').trim() &&
+            String(server.playerToken || '').trim()
+        );
     }
 
     addPairingSession(record) {

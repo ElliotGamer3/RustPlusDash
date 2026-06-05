@@ -7,12 +7,16 @@ class RustConnectionManager {
         this.rateLimitCoordinator = rateLimitCoordinator;
         this.connections = new Map();
         this.cameraRecords = new Map();
+        // Map image cache: serverId -> { data, cachedAt }  (5-min TTL, 5 tokens to fetch)
+        this.mapImageCache = new Map();
+        // Server info cache: serverId -> { data, cachedAt } (5-min TTL, 1 token to fetch)
+        this.serverInfoCache = new Map();
     }
 
     async start() {
         const activeServer = this.store.getActiveServer();
 
-        if (activeServer) {
+        if (activeServer && this.#hasConnectionInfo(activeServer)) {
             await this.ensureServerConnection(activeServer.id);
         }
     }
@@ -44,6 +48,10 @@ class RustConnectionManager {
 
         if (!server) {
             throw new Error(`Unknown server: ${serverId}`);
+        }
+
+        if (!this.#hasConnectionInfo(server)) {
+            throw new Error('Server profile is incomplete. Add host, port, player ID, and player token first.');
         }
 
         const client = new RustPlus(server.host, server.port, server.playerId, server.playerToken);
@@ -130,9 +138,90 @@ class RustConnectionManager {
 
     async sendTeamMessage(serverId, message) {
         const record = await this.#getReadyConnection(serverId);
-        return this.rateLimitCoordinator.enqueue(serverId, 2, () => {
+        const response = await this.rateLimitCoordinator.enqueue(serverId, 2, () => {
             return this.#invoke(record.client.sendTeamMessage.bind(record.client), [message]);
         });
+
+        const appError = response?.response?.error;
+        if (appError) {
+            throw new Error(this.#formatAppError(appError, 'Failed to send team message'));
+        }
+
+        return response;
+    }
+
+    async getMap(serverId) {
+        const cached = this.mapImageCache.get(serverId);
+        if (cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) {
+            return cached.data;
+        }
+        const record = await this.#getReadyConnection(serverId);
+        const message = await this.rateLimitCoordinator.enqueue(serverId, 5, () => {
+            return this.#invoke(record.client.getMap.bind(record.client), []);
+        });
+        const data = message.response?.map || null;
+        this.mapImageCache.set(serverId, { data, cachedAt: Date.now() });
+        return data;
+    }
+
+    async getMapMarkers(serverId) {
+        const record = await this.#getReadyConnection(serverId);
+        const message = await this.rateLimitCoordinator.enqueue(serverId, 1, () => {
+            return this.#invoke(record.client.getMapMarkers.bind(record.client), []);
+        });
+        return message.response?.mapMarkers?.markers || [];
+    }
+
+    async getServerInfo(serverId, { forceRefresh = false } = {}) {
+        const cached = this.serverInfoCache.get(serverId);
+        if (!forceRefresh && cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) {
+            return cached.data;
+        }
+
+        const record = await this.#getReadyConnection(serverId);
+        try {
+            const requestPromise = this.rateLimitCoordinator.enqueue(serverId, 1, () => {
+                return this.#invoke(record.client.getInfo.bind(record.client), []);
+            });
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('getInfo request timed out')), 4000);
+            });
+            const message = await Promise.race([requestPromise, timeoutPromise]);
+            const data = message.response?.info || null;
+            this.serverInfoCache.set(serverId, { data, cachedAt: Date.now() });
+            return data;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    async checkServerConnection(serverId) {
+        try {
+            await this.ensureServerConnection(serverId);
+            const info = await this.getServerInfo(serverId, { forceRefresh: true });
+            const record = this.connections.get(serverId);
+            const isConnected = record?.status === 'connected';
+            const warning = !info && isConnected
+                ? 'Connected, but server info request did not return data yet.'
+                : null;
+
+            return {
+                ok: Boolean(info) || isConnected,
+                status: record?.status || 'idle',
+                lastError: record?.lastError || null,
+                warning,
+                info
+            };
+        } catch (error) {
+            const record = this.connections.get(serverId);
+            return {
+                ok: false,
+                status: record?.status || 'error',
+                lastError: error.message,
+                warning: null,
+                info: null
+            };
+        }
     }
 
     async setEntityValue(serverId, entityId, value) {
@@ -197,6 +286,19 @@ class RustConnectionManager {
         this.cameraRecords.delete(key);
     }
 
+    async clearServerDevices(serverId, devices = []) {
+        const cameraDevices = devices.filter((device) => ['camera', 'turret'].includes(device.type) && device.cameraId);
+
+        await Promise.allSettled(cameraDevices.map((device) => {
+            return this.unsubscribeCamera(serverId, device.cameraId);
+        }));
+
+        const record = this.connections.get(serverId);
+        if (record) {
+            record.primedEntities.clear();
+        }
+    }
+
     async cameraMove(serverId, cameraId, buttons, x, y) {
         const cameraRecord = await this.subscribeCamera(serverId, cameraId);
         return this.rateLimitCoordinator.enqueue(serverId, 0.01, async () => {
@@ -257,6 +359,15 @@ class RustConnectionManager {
         });
     }
 
+    #hasConnectionInfo(server) {
+        return Boolean(
+            String(server?.host || '').trim() &&
+            String(server?.port || '').trim() &&
+            String(server?.playerId || '').trim() &&
+            String(server?.playerToken || '').trim()
+        );
+    }
+
     #handleMessage(serverId, message) {
         const broadcast = message && message.broadcast;
         const entityChanged = broadcast && broadcast.entityChanged;
@@ -280,6 +391,33 @@ class RustConnectionManager {
                 reject(error);
             }
         });
+    }
+
+    #formatAppError(appError, fallbackMessage) {
+        if (!appError) {
+            return fallbackMessage;
+        }
+
+        if (typeof appError === 'string') {
+            return appError;
+        }
+
+        const message = String(appError?.message || '').trim();
+        const code = appError?.code;
+
+        if (message && code !== undefined && code !== null) {
+            return `${message} (code ${code})`;
+        }
+
+        if (message) {
+            return message;
+        }
+
+        if (code !== undefined && code !== null) {
+            return `${fallbackMessage} (code ${code})`;
+        }
+
+        return fallbackMessage;
     }
 }
 

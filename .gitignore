@@ -8,3 +8,19 @@ Core/data/app-state.json
 
 # RustPlus auth config — contains FCM credentials, auth token, and push token
 rustplus.config.json
+
+# Proto decode error log — local debug artifact, not for source control
+proto-decode-errors.jsonl
+
+#ignore log files
+logs/
+
+#ignore environment variable files that may contain sensitive information
+.env
+.env.local
+
+#ignore agent stuff
+AGENTS.md
+docs/AI_AGENT_CONTEXT_MASTER.md
+docs/AI_AGENT_CONTEXT_UPDATE.md
+ProjectReq.md

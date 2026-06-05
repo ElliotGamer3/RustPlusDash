@@ -3,7 +3,50 @@ const app = {
     snapshot: null,
     activeTab: 'overview',
     selectedStorageGroupId: null,
-    groupEditorModes: new Set()
+    groupEditorModes: new Set(),
+    mapMeta: null,
+    mapImage: null,
+    mapMarkers: [],
+    mapPollInterval: null,
+    mapFilterTypes: new Set(),
+    mapBindingsInstalled: false,
+    mapView: {
+        scale: 1,
+        offsetX: 0,
+        offsetY: 0,
+        isPanning: false,
+        lastClientX: 0,
+        lastClientY: 0
+    },
+    serverSetupModalShown: false
+};
+
+const serverSetupModal = () => document.getElementById('server-setup-modal');
+
+function syncServerSetupModal() {
+    const modal = serverSetupModal();
+
+    if (!modal) {
+        return;
+    }
+
+    const shouldShow = !hasUsableServer();
+
+    modal.classList.toggle('is-open', shouldShow);
+    modal.setAttribute('aria-hidden', shouldShow ? 'false' : 'true');
+    document.body.classList.toggle('server-setup-lock', shouldShow);
+
+    if (shouldShow && !app.serverSetupModalShown) {
+        app.serverSetupModalShown = true;
+        const firstInput = modal.querySelector('input[name="name"]');
+        if (firstInput) {
+            setTimeout(() => firstInput.focus(), 0);
+        }
+    }
+
+    if (!shouldShow) {
+        app.serverSetupModalShown = false;
+    }
 };
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -53,11 +96,26 @@ function fmtTime(iso) {
     try { return new Date(iso).toLocaleTimeString(); } catch { return iso; }
 }
 
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // ─── Accessors ────────────────────────────────────────────────────────────────
 const sid  = () => app.snapshot?.settings?.activeServerId;
 const devs = (type) => (app.snapshot?.devices  || []).filter(d => d.serverId === sid() && (!type || d.type === type));
 const grps = (type) => (app.snapshot?.groups   || []).filter(g => g.serverId === sid() && (!type || g.type === type));
 const conn = (id)   => (app.snapshot?.connectionStates || []).find(c => c.serverId === (id ?? sid()));
+
+function hasUsableServer() {
+    return (app.snapshot?.servers || []).some((server) => {
+        return Boolean(
+            String(server.host || '').trim() &&
+            String(server.port || '').trim() &&
+            String(server.playerId || '').trim() &&
+            String(server.playerToken || '').trim()
+        );
+    });
+}
 
 // ─── Tab switching ────────────────────────────────────────────────────────────
 document.addEventListener('click', (event) => {
@@ -81,6 +139,11 @@ document.addEventListener('click', (event) => {
     if (tabButton.dataset.tab === 'storage' && app.selectedStorageGroupId) {
         loadStorageMetrics(app.selectedStorageGroupId);
     }
+    if (tabButton.dataset.tab === 'map') {
+        initMapTab();
+    } else {
+        stopMapPoll();
+    }
 });
 
 // ─── Main render ──────────────────────────────────────────────────────────────
@@ -99,6 +162,7 @@ function render(snapshot) {
     refreshAlarmGroupSelect();
     refreshReqGroupSelect();
     refreshGroupDeviceChecklist();
+    syncServerSetupModal();
 }
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
@@ -650,6 +714,7 @@ function renderSettings() {
     list.innerHTML = (app.snapshot?.servers || []).map(s => {
         const c = conn(s.id);
         const isActive = s.id === sid();
+        const deviceCount = (app.snapshot?.devices || []).filter((device) => device.serverId === s.id).length;
         return `
         <div class="dcard">
             <div class="dcard-head">
@@ -657,11 +722,14 @@ function renderSettings() {
                 <span class="pill ${c?.status === 'connected' ? 'on' : 'off'}">${esc(c?.status || 'idle')}</span>
             </div>
             <div class="dcard-sub">${esc(s.host)}:${esc(String(s.port))}</div>
+            <div class="dcard-note">${deviceCount} device${deviceCount === 1 ? '' : 's'} registered on this server.</div>
             <div class="dcard-actions">
                 ${isActive
                     ? '<span class="pill on">Active</span>'
                     : `<button class="primary" data-action="server-active" data-server-id="${esc(s.id)}">Set Active</button>`}
+                <button data-action="server-check-connection" data-server-id="${esc(s.id)}">Check Connection</button>
                 <button data-action="server-default" data-server-id="${esc(s.id)}">Default</button>
+                <button class="danger" data-action="server-devices-clear" data-server-id="${esc(s.id)}">Clear Devices</button>
                 <button class="danger" data-action="server-delete" data-server-id="${esc(s.id)}">Delete</button>
             </div>
         </div>`;
@@ -920,6 +988,19 @@ document.getElementById('pair-server-form').addEventListener('submit', guard(asy
     toast('Server added', false);
 }));
 
+document.getElementById('server-setup-form').addEventListener('submit', guard(async e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    await api('/api/pairing/server', 'POST', {
+        name: fd.get('name'), host: fd.get('host'), port: fd.get('port'),
+        playerId: fd.get('playerId'), playerToken: fd.get('playerToken'),
+        isDefault: fd.get('isDefault') === 'on'
+    });
+
+    e.target.reset();
+    toast('Server added', false);
+}));
+
 document.getElementById('import-config-form').addEventListener('submit', guard(async e => {
     e.preventDefault();
     const fd = new FormData(e.target);
@@ -1062,6 +1143,31 @@ document.addEventListener('click', guard(async e => {
 
     if (action === 'server-active')    { await api('/api/servers/active',         'POST',   { serverId }); }
     if (action === 'server-default')   { await api('/api/servers/default',        'POST',   { serverId }); }
+    if (action === 'server-check-connection') {
+        const result = await api(`/api/servers/${serverId}/check-connection`, 'POST', {});
+        if (result?.ok) {
+            const name = result.info?.name ? ` (${result.info.name})` : '';
+            const suffix = result.warning ? ` - ${result.warning}` : '';
+            toast(`Connection OK${name}${suffix}`, false);
+        } else {
+            throw new Error(result?.lastError || 'Connection check failed');
+        }
+        return;
+    }
+    if (action === 'server-devices-clear') {
+        const deviceCount = (app.snapshot?.devices || []).filter((device) => device.serverId === serverId).length;
+        const server = (app.snapshot?.servers || []).find((item) => item.id === serverId);
+        const serverName = server?.name || 'this server';
+        const confirmMessage = `This will permanently remove ${deviceCount} device${deviceCount === 1 ? '' : 's'} from ${serverName}.\n\nIt will also clear any group memberships and storage history tied to those devices. Use this after a server wipe.\n\nContinue?`;
+
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+
+        const result = await api(`/api/servers/${serverId}/devices`, 'DELETE');
+        toast(`Cleared ${result?.removed ?? 0} device${result?.removed === 1 ? '' : 's'}`, false);
+        return;
+    }
     if (action === 'server-delete')    { await api(`/api/servers/${serverId}`,    'DELETE'); }
     if (action === 'device-delete')    { await api(`/api/devices/${deviceId}`,    'DELETE'); }
     if (action === 'device-rename')    { startRenameDevice(deviceId, btn); return; }
@@ -1156,3 +1262,764 @@ function connectSSE() {
             </div>`;
     }
 })();
+
+// ─── Map tab ──────────────────────────────────────────────────────────────────
+
+const MAP_MARKER_TYPES = {
+    0: { label: 'Undefined',         color: '#9e9e9e', shape: 'circle' },
+    1: { label: 'Player Marker',     color: '#4caf50', shape: 'circle' },
+    2: { label: 'Explosion',         color: '#f44336', shape: 'burst'  },
+    3: { label: 'Vending Machine',   color: '#ffeb3b', shape: 'square' },
+    4: { label: 'CH47',              color: '#00bcd4', shape: 'circle' },
+    5: { label: 'Cargo Ship',        color: '#3f51b5', shape: 'circle' },
+    6: { label: 'Locked Crate',      color: '#9c27b0', shape: 'square' },
+    7: { label: 'Generic Radius',    color: '#607d8b', shape: 'ring'   },
+    8: { label: 'Patrol Helicopter', color: '#ff9800', shape: 'circle' },
+};
+
+const MAP_MIN_SCALE = 1;
+const MAP_MAX_SCALE = 5;
+const MAP_ZOOM_STEP = 0.2;
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function getMarkerInfo(type) {
+    return MAP_MARKER_TYPES[type] || { label: `Type ${type}`, color: '#888', shape: 'circle' };
+}
+
+function toFiniteNumber(value, fallback = null) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+    if (value && typeof value === 'object') {
+        if (typeof value.low === 'number') {
+            return Number.isFinite(value.low) ? value.low : fallback;
+        }
+        if (typeof value.value === 'number') {
+            return Number.isFinite(value.value) ? value.value : fallback;
+        }
+    }
+    return fallback;
+}
+
+function parseMarkerType(rawMarker) {
+    const candidate =
+        rawMarker?.type ??
+        rawMarker?.markerType ??
+        rawMarker?.appMarkerType ??
+        rawMarker?.kind;
+
+    const numericType = toFiniteNumber(candidate, null);
+    if (numericType !== null) {
+        return numericType;
+    }
+
+    if (typeof candidate === 'string') {
+        const normalized = candidate.toLowerCase().replace(/\s|_|-/g, '');
+        const lookup = {
+            player: 1,
+            explosion: 2,
+            vendingmachine: 3,
+            ch47: 4,
+            cargoship: 5,
+            crate: 6,
+            lockedcrate: 6,
+            genericradius: 7,
+            patrolhelicopter: 8
+        };
+        return lookup[normalized] ?? 0;
+    }
+
+    return 0;
+}
+
+function normalizeMarker(rawMarker) {
+    const type = parseMarkerType(rawMarker);
+    return {
+        ...rawMarker,
+        type,
+        x: toFiniteNumber(rawMarker?.x, 0),
+        y: toFiniteNumber(rawMarker?.y, 0),
+        rotation: toFiniteNumber(rawMarker?.rotation, null),
+        radius: toFiniteNumber(rawMarker?.radius, null),
+        amount: toFiniteNumber(rawMarker?.amount, null)
+    };
+}
+
+function normalizeMarkers(markers) {
+    return (markers || []).map(normalizeMarker);
+}
+
+function gridColumnLabel(index) {
+    let label = '';
+    let n = index;
+    do {
+        label = String.fromCharCode(65 + (n % 26)) + label;
+        n = Math.floor(n / 26) - 1;
+    } while (n >= 0);
+    return label;
+}
+
+function getMarkerGrid(marker) {
+    if (!app.mapMeta) return 'Unknown';
+
+    const mapSize = toFiniteNumber(app.mapMeta.mapSize, 2000);
+    if (!mapSize) return 'Unknown';
+
+    const gridSize = 146.3;
+    const columns = Math.max(1, Math.ceil(mapSize / gridSize));
+    const rows = columns;
+    const colIndex = clamp(Math.floor(marker.x / gridSize), 0, columns - 1);
+    const rowIndex = clamp(Math.floor((mapSize - marker.y) / gridSize) + 1, 1, rows);
+    return `${gridColumnLabel(colIndex)}${rowIndex}`;
+}
+
+function normalizeLookupText(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function findMonument(monuments, tokenHints) {
+    const hints = tokenHints.map(normalizeLookupText);
+    return (monuments || []).find((monument) => {
+        const token = normalizeLookupText(monument?.token);
+        return hints.some((hint) => token.includes(hint));
+    }) || null;
+}
+
+function markerNameMatches(marker, hints) {
+    const name = normalizeLookupText(marker?.name);
+    return hints.some((hint) => name.includes(hint));
+}
+
+function centroid(markers) {
+    if (!markers.length) return null;
+    const sums = markers.reduce((acc, marker) => {
+        acc.x += toFiniteNumber(marker.x, 0);
+        acc.y += toFiniteNumber(marker.y, 0);
+        return acc;
+    }, { x: 0, y: 0 });
+    return {
+        x: sums.x / markers.length,
+        y: sums.y / markers.length
+    };
+}
+
+function solveLinearSystem(matrix, values) {
+    const size = values.length;
+    const augmented = matrix.map((row, rowIndex) => [...row, values[rowIndex]]);
+
+    for (let column = 0; column < size; column += 1) {
+        let pivotRow = column;
+        let pivotValue = Math.abs(augmented[column][column]);
+
+        for (let row = column + 1; row < size; row += 1) {
+            const candidate = Math.abs(augmented[row][column]);
+            if (candidate > pivotValue) {
+                pivotValue = candidate;
+                pivotRow = row;
+            }
+        }
+
+        if (pivotValue < 1e-9) {
+            return null;
+        }
+
+        if (pivotRow !== column) {
+            [augmented[column], augmented[pivotRow]] = [augmented[pivotRow], augmented[column]];
+        }
+
+        const pivot = augmented[column][column];
+        for (let entry = column; entry <= size; entry += 1) {
+            augmented[column][entry] /= pivot;
+        }
+
+        for (let row = 0; row < size; row += 1) {
+            if (row === column) continue;
+            const factor = augmented[row][column];
+            if (Math.abs(factor) < 1e-12) continue;
+            for (let entry = column; entry <= size; entry += 1) {
+                augmented[row][entry] -= factor * augmented[column][entry];
+            }
+        }
+    }
+
+    return augmented.map((row) => row[size]);
+}
+
+function fitAffineTransform(pairs) {
+    if (!pairs || pairs.length < 3) return null;
+
+    const normalMatrix = Array.from({ length: 6 }, () => Array(6).fill(0));
+    const normalValues = Array(6).fill(0);
+
+    for (const pair of pairs) {
+        const x = toFiniteNumber(pair.source?.x, null);
+        const y = toFiniteNumber(pair.source?.y, null);
+        const targetX = toFiniteNumber(pair.target?.x, null);
+        const targetY = toFiniteNumber(pair.target?.y, null);
+        if (x === null || y === null || targetX === null || targetY === null) continue;
+
+        const rowX = [x, y, 1, 0, 0, 0];
+        const rowY = [0, 0, 0, x, y, 1];
+
+        for (let i = 0; i < 6; i += 1) {
+            for (let j = 0; j < 6; j += 1) {
+                normalMatrix[i][j] += rowX[i] * rowX[j] + rowY[i] * rowY[j];
+            }
+            normalValues[i] += rowX[i] * targetX + rowY[i] * targetY;
+        }
+    }
+
+    const coeffs = solveLinearSystem(normalMatrix, normalValues);
+    if (!coeffs) return null;
+
+    return {
+        a: coeffs[0],
+        b: coeffs[1],
+        c: coeffs[2],
+        d: coeffs[3],
+        e: coeffs[4],
+        f: coeffs[5]
+    };
+}
+
+function applyAffineTransform(transform, x, y) {
+    if (!transform) return { x, y };
+    return {
+        x: transform.a * x + transform.b * y + transform.c,
+        y: transform.d * x + transform.e * y + transform.f
+    };
+}
+
+function composeAffineTransforms(outer, inner) {
+    if (!outer) return inner;
+    if (!inner) return outer;
+
+    return {
+        a: outer.a * inner.a + outer.b * inner.d,
+        b: outer.a * inner.b + outer.b * inner.e,
+        c: outer.a * inner.c + outer.b * inner.f + outer.c,
+        d: outer.d * inner.a + outer.e * inner.d,
+        e: outer.d * inner.b + outer.e * inner.e,
+        f: outer.d * inner.c + outer.e * inner.f + outer.f
+    };
+}
+
+function buildPseudoAlignmentPairs(mapMeta) {
+    const mapW = toFiniteNumber(mapMeta?.width, 0);
+    const mapH = toFiniteNumber(mapMeta?.height, 0);
+    const oceanMargin = toFiniteNumber(mapMeta?.oceanMargin, 0);
+    const worldSize = toFiniteNumber(mapMeta?.mapSize, 0);
+    if (!mapW || !mapH || !worldSize) return [];
+
+    const worldMid = worldSize / 2;
+    const imageMidX = mapW / 2;
+    const imageMidY = mapH / 2;
+    const imageLeft = oceanMargin;
+    const imageRight = mapW - oceanMargin;
+    const imageTop = oceanMargin;
+    const imageBottom = mapH - oceanMargin;
+
+    return [
+        { source: { x: 0, y: 0 }, target: { x: imageLeft, y: imageBottom } },
+        { source: { x: worldMid, y: 0 }, target: { x: imageMidX, y: imageBottom } },
+        { source: { x: worldSize, y: 0 }, target: { x: imageRight, y: imageBottom } },
+        { source: { x: 0, y: worldMid }, target: { x: imageLeft, y: imageMidY } },
+        { source: { x: worldMid, y: worldMid }, target: { x: imageMidX, y: imageMidY } },
+        { source: { x: worldSize, y: worldMid }, target: { x: imageRight, y: imageMidY } },
+        { source: { x: 0, y: worldSize }, target: { x: imageLeft, y: imageTop } },
+        { source: { x: worldMid, y: worldSize }, target: { x: imageMidX, y: imageTop } },
+        { source: { x: worldSize, y: worldSize }, target: { x: imageRight, y: imageTop } }
+    ];
+}
+
+function collectAnchorPairs(markers, monuments, baseline) {
+    const anchorDefinitions = [
+        {
+            monumentHints: ['outpost'],
+            markerHints: ['building', 'weapons', 'components', 'tools', 'outfitters', 'resource exchange']
+        },
+        {
+            monumentHints: ['bandit'],
+            markerHints: ['black market', 'food market', 'scrap 4 sale', 'vehicle parts', 'produce exchange', 'casino bar shopkeeper']
+        }
+    ];
+
+    const vendingMarkers = (markers || []).filter((marker) => marker.type === 3 && marker.name);
+    const pairs = [];
+
+    for (const definition of anchorDefinitions) {
+        const monument = findMonument(monuments, definition.monumentHints);
+        if (!monument) continue;
+
+        const candidates = vendingMarkers.filter((marker) => markerNameMatches(marker, definition.markerHints.map(normalizeLookupText)));
+        if (!candidates.length) continue;
+
+        const scored = candidates.map((marker) => {
+            const projected = applyAffineTransform(baseline, marker.x, marker.y);
+            return {
+                marker,
+                distance: Math.hypot(projected.x - toFiniteNumber(monument.x, 0), projected.y - toFiniteNumber(monument.y, 0))
+            };
+        }).sort((left, right) => left.distance - right.distance);
+
+        const cluster = scored.slice(0, Math.min(6, scored.length)).map((entry) => entry.marker);
+        if (cluster.length < 2) continue;
+
+        const center = centroid(cluster);
+        if (!center) continue;
+
+        pairs.push({
+            source: center,
+            target: {
+                x: toFiniteNumber(monument.x, 0),
+                y: toFiniteNumber(monument.y, 0)
+            }
+        });
+    }
+
+    return pairs;
+}
+
+function computeAxisCorrection(pairs) {
+    if (!pairs || pairs.length < 2) return null;
+
+    const first = pairs[0];
+    const second = pairs[1];
+
+    const sourceDeltaX = second.source.x - first.source.x;
+    const sourceDeltaY = second.source.y - first.source.y;
+    const targetDeltaX = second.target.x - first.target.x;
+    const targetDeltaY = second.target.y - first.target.y;
+
+    if (Math.abs(sourceDeltaX) < 1 || Math.abs(sourceDeltaY) < 1) return null;
+
+    const scaleX = targetDeltaX / sourceDeltaX;
+    const scaleY = targetDeltaY / sourceDeltaY;
+
+    if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY)) return null;
+    if (scaleX < 0.5 || scaleX > 1.5 || scaleY < 0.5 || scaleY > 1.5) return null;
+
+    return {
+        a: scaleX,
+        b: 0,
+        c: first.target.x - first.source.x * scaleX,
+        d: 0,
+        e: scaleY,
+        f: first.target.y - first.source.y * scaleY
+    };
+}
+
+function computeMapAlignmentTransform(markers, mapMeta) {
+    const baseline = fitAffineTransform(buildPseudoAlignmentPairs(mapMeta));
+    if (!baseline) return null;
+
+    const correctionPairs = collectAnchorPairs(markers, mapMeta?.monuments || [], baseline)
+        .map((pair) => ({
+            source: applyAffineTransform(baseline, pair.source.x, pair.source.y),
+            target: pair.target
+        }));
+
+    const correction = computeAxisCorrection(correctionPairs);
+    if (!correction) {
+        return baseline;
+    }
+
+    return composeAffineTransforms(correction, baseline);
+}
+
+function stopMapPoll() {
+    if (app.mapPollInterval) {
+        clearInterval(app.mapPollInterval);
+        app.mapPollInterval = null;
+    }
+}
+
+async function initMapTab() {
+    const autoRefreshCb = document.getElementById('map-autorefresh');
+    const refreshBtn = document.getElementById('map-refresh-btn');
+    const zoomInBtn = document.getElementById('map-zoom-in-btn');
+    const zoomOutBtn = document.getElementById('map-zoom-out-btn');
+    const resetViewBtn = document.getElementById('map-reset-view-btn');
+    const filterAllBtn = document.getElementById('map-filter-all-btn');
+    const filterNoneBtn = document.getElementById('map-filter-none-btn');
+
+    initMapInteractions();
+
+    // Load map image if not already cached
+    if (!app.mapImage) {
+        await loadMapImage();
+    } else {
+        renderMap();
+    }
+
+    // Wire up refresh button
+    refreshBtn.onclick = () => loadMapMarkers();
+    zoomInBtn.onclick = () => zoomMapAtViewportCenter(MAP_ZOOM_STEP);
+    zoomOutBtn.onclick = () => zoomMapAtViewportCenter(-MAP_ZOOM_STEP);
+    resetViewBtn.onclick = () => resetMapView();
+
+    filterAllBtn.onclick = () => {
+        const allTypes = new Set((app.mapMarkers || []).map((marker) => marker.type));
+        app.mapFilterTypes = allTypes;
+        renderMapFilterControls();
+        renderMap();
+    };
+
+    filterNoneBtn.onclick = () => {
+        app.mapFilterTypes = new Set();
+        renderMapFilterControls();
+        renderMap();
+    };
+
+    // Wire up auto-refresh toggle
+    autoRefreshCb.onchange = () => {
+        stopMapPoll();
+        if (autoRefreshCb.checked) {
+            loadMapMarkers();
+            app.mapPollInterval = setInterval(loadMapMarkers, 5000);
+        }
+    };
+
+    // Initial marker load
+    await loadMapMarkers();
+
+    // Restart poll if auto-refresh was already on
+    if (autoRefreshCb.checked && !app.mapPollInterval) {
+        app.mapPollInterval = setInterval(loadMapMarkers, 5000);
+    }
+}
+
+function resetMapView() {
+    app.mapView.scale = 1;
+    app.mapView.offsetX = 0;
+    app.mapView.offsetY = 0;
+    applyMapTransform();
+}
+
+async function loadMapImage() {
+    const statusEl = document.getElementById('map-status');
+    statusEl.textContent = 'Loading map image…';
+    let lastError = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            const data = await api('/api/map');
+            app.mapMeta = data;
+            const img = new Image();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = `data:image/jpeg;base64,${data.jpgBase64}`;
+            });
+            app.mapImage = img;
+            statusEl.textContent = `Map loaded (${data.width}×${data.height})`;
+            resetMapView();
+            renderMap();
+            return;
+        } catch (err) {
+            lastError = err;
+            if (attempt < 2 && /Map data unavailable/i.test(err.message)) {
+                statusEl.textContent = `Map not ready yet, retrying… (${attempt + 1}/3)`;
+                await delay(500 * (attempt + 1));
+                continue;
+            }
+            break;
+        }
+    }
+
+    statusEl.textContent = `Map error: ${lastError?.message || 'Unknown error'}`;
+}
+
+async function loadMapMarkers() {
+    if (!app.mapImage) return;
+    try {
+        const data = await api('/api/map/markers');
+        app.mapMarkers = normalizeMarkers(data.markers || []);
+        ensureMapFilterTypes(app.mapMarkers);
+        renderMapFilterControls();
+        renderMap();
+    } catch (err) {
+        // silently skip failed marker refresh
+    }
+}
+
+function ensureMapFilterTypes(markers) {
+    const types = new Set((markers || []).map((marker) => marker.type));
+    if (app.mapFilterTypes.size === 0) {
+        app.mapFilterTypes = new Set(types);
+        return;
+    }
+    for (const type of types) {
+        if (!app.mapFilterTypes.has(type)) {
+            app.mapFilterTypes.add(type);
+        }
+    }
+}
+
+function getFilteredMapMarkers() {
+    const markers = app.mapMarkers || [];
+    if (!markers.length) return [];
+    return markers.filter((marker) => app.mapFilterTypes.has(marker.type));
+}
+
+function renderMap() {
+    const filtered = getFilteredMapMarkers();
+    drawMapCanvas(filtered);
+    renderMapMarkerList(filtered);
+
+    const statusEl = document.getElementById('map-status');
+    if (statusEl) {
+        statusEl.textContent = `Showing ${filtered.length}/${(app.mapMarkers || []).length} markers`;
+    }
+}
+
+function renderMapFilterControls() {
+    const listEl = document.getElementById('map-filter-list');
+    if (!listEl) return;
+
+    const markers = app.mapMarkers || [];
+    if (!markers.length) {
+        listEl.innerHTML = '<span style="color:var(--muted);font-size:0.84rem;">No marker data yet</span>';
+        return;
+    }
+
+    const counts = new Map();
+    for (const marker of markers) {
+        const type = marker.type;
+        counts.set(type, (counts.get(type) || 0) + 1);
+    }
+
+    const sortedTypes = [...counts.keys()].sort((a, b) => a - b);
+    listEl.innerHTML = sortedTypes.map((type) => {
+        const info = getMarkerInfo(type);
+        const checked = app.mapFilterTypes.has(type) ? 'checked' : '';
+        const count = counts.get(type) || 0;
+        return `<label class="map-filter-chip">
+            <input type="checkbox" class="map-filter-input" data-marker-type="${type}" ${checked} style="width:auto;" />
+            <span class="map-filter-dot" style="background:${info.color};"></span>
+            <span>${esc(info.label)}</span>
+            <span class="pill">${count}</span>
+        </label>`;
+    }).join('');
+
+    listEl.querySelectorAll('.map-filter-input').forEach((cb) => {
+        cb.addEventListener('change', (event) => {
+            const type = Number(event.target.dataset.markerType);
+            if (event.target.checked) {
+                app.mapFilterTypes.add(type);
+            } else {
+                app.mapFilterTypes.delete(type);
+            }
+            renderMap();
+        });
+    });
+}
+
+function drawMapCanvas(markers) {
+    const canvas = document.getElementById('map-canvas');
+    if (!canvas || !app.mapImage) return;
+
+    const img = app.mapImage;
+    const meta = app.mapMeta;
+    canvas.width  = meta.width;
+    canvas.height = meta.height;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    if (!markers || markers.length === 0) return;
+
+    const mapW = meta.width;
+    const mapH = meta.height;
+    const oceanMargin = toFiniteNumber(meta.oceanMargin, 0);
+    const mapSize = toFiniteNumber(meta.mapSize, 2000);
+    if (!mapSize || mapSize <= 0) return;
+
+    const alignment = computeMapAlignmentTransform(markers, meta);
+
+    for (const m of markers) {
+        const type = getMarkerInfo(Number(m.type));
+
+        const alignedPoint = applyAffineTransform(alignment, m.x, m.y);
+        const px = alignedPoint.x;
+        const py = alignedPoint.y;
+
+        ctx.save();
+        ctx.beginPath();
+
+        if (type.shape === 'square') {
+            const size = 12;
+            ctx.rect(px - size / 2, py - size / 2, size, size);
+        } else if (type.shape === 'ring') {
+            const outerRadius = 12;
+            const innerRadius = 5;
+            ctx.arc(px, py, outerRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = type.color;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(px, py, innerRadius, 0, Math.PI * 2);
+        } else if (type.shape === 'burst') {
+            // Simple X shape for explosions
+            const r = 10;
+            ctx.moveTo(px - r, py - r); ctx.lineTo(px + r, py + r);
+            ctx.moveTo(px + r, py - r); ctx.lineTo(px - r, py + r);
+            ctx.strokeStyle = type.color;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.restore();
+            continue;
+        } else {
+            ctx.arc(px, py, 9, 0, Math.PI * 2);
+        }
+
+        ctx.fillStyle = type.color;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Label (name for vending machines / player names)
+        if (m.name) {
+            ctx.font = 'bold 11px sans-serif';
+            ctx.fillStyle = '#fff';
+            ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+            ctx.lineWidth = 3;
+            ctx.strokeText(m.name, px + 8, py + 4);
+            ctx.fillText(m.name, px + 8, py + 4);
+        }
+
+        ctx.restore();
+    }
+
+    applyMapTransform();
+}
+
+function renderMapMarkerList(markers) {
+    const el = document.getElementById('map-marker-list');
+    if (!el) return;
+    if (!markers.length) {
+        el.innerHTML = '<span style="color:var(--muted);font-size:0.84rem;">No markers found</span>';
+        return;
+    }
+
+    const sorted = [...markers].sort((a, b) => {
+        if (a.type !== b.type) return a.type - b.type;
+        const aName = String(a.name || '');
+        const bName = String(b.name || '');
+        return aName.localeCompare(bName);
+    });
+
+    el.innerHTML = sorted.map((marker) => {
+        const info = getMarkerInfo(marker.type);
+        const name = marker.name ? esc(marker.name) : 'Unnamed';
+        const grid = getMarkerGrid(marker);
+        const details = [];
+        details.push(`x: ${marker.x.toFixed(1)}`);
+        details.push(`y: ${marker.y.toFixed(1)}`);
+        if (marker.rotation !== null) {
+            details.push(`rotation: ${Math.round(marker.rotation)}°`);
+        }
+        if (marker.radius !== null) {
+            details.push(`radius: ${Math.round(marker.radius)}`);
+        }
+        if (Array.isArray(marker.sellOrders) && marker.sellOrders.length) {
+            details.push(`sell orders: ${marker.sellOrders.length}`);
+        }
+
+        return `<article class="map-marker-card">
+            <div class="map-marker-card-head">
+                <span class="map-marker-dot" style="background:${info.color};"></span>
+                <div class="map-marker-title-wrap">
+                    <h3 class="map-marker-title">${name}</h3>
+                    <p class="map-marker-subtitle">${esc(info.label)}${marker.id ? ` · id: ${esc(String(marker.id))}` : ''}</p>
+                </div>
+                <span class="map-marker-grid">${esc(grid)}</span>
+            </div>
+            <div class="map-marker-meta">${details.map((item) => `<span>${esc(item)}</span>`).join('')}</div>
+        </article>`;
+    }).join('');
+}
+
+function applyMapTransform() {
+    const canvas = document.getElementById('map-canvas');
+    if (!canvas) return;
+    const { scale, offsetX, offsetY } = app.mapView;
+    canvas.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+}
+
+function zoomMapAtViewportCenter(delta) {
+    const viewport = document.getElementById('map-viewport');
+    if (!viewport) return;
+    const rect = viewport.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    zoomMapAtPoint(centerX, centerY, delta);
+}
+
+function zoomMapAtPoint(clientX, clientY, delta) {
+    const viewport = document.getElementById('map-viewport');
+    if (!viewport) return;
+
+    const prevScale = app.mapView.scale;
+    const nextScale = clamp(prevScale + delta, MAP_MIN_SCALE, MAP_MAX_SCALE);
+    if (nextScale === prevScale) return;
+
+    const rect = viewport.getBoundingClientRect();
+    const vx = clientX - rect.left;
+    const vy = clientY - rect.top;
+
+    app.mapView.offsetX = vx - (vx - app.mapView.offsetX) * (nextScale / prevScale);
+    app.mapView.offsetY = vy - (vy - app.mapView.offsetY) * (nextScale / prevScale);
+    app.mapView.scale = nextScale;
+    applyMapTransform();
+}
+
+function initMapInteractions() {
+    if (app.mapBindingsInstalled) return;
+
+    const viewport = document.getElementById('map-viewport');
+    if (!viewport) return;
+
+    viewport.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        const direction = event.deltaY < 0 ? MAP_ZOOM_STEP : -MAP_ZOOM_STEP;
+        zoomMapAtPoint(event.clientX, event.clientY, direction);
+    }, { passive: false });
+
+    viewport.addEventListener('pointerdown', (event) => {
+        app.mapView.isPanning = true;
+        app.mapView.lastClientX = event.clientX;
+        app.mapView.lastClientY = event.clientY;
+        viewport.classList.add('is-panning');
+    });
+
+    viewport.addEventListener('pointermove', (event) => {
+        if (!app.mapView.isPanning) return;
+        const dx = event.clientX - app.mapView.lastClientX;
+        const dy = event.clientY - app.mapView.lastClientY;
+        app.mapView.lastClientX = event.clientX;
+        app.mapView.lastClientY = event.clientY;
+        app.mapView.offsetX += dx;
+        app.mapView.offsetY += dy;
+        applyMapTransform();
+    });
+
+    const endPan = () => {
+        app.mapView.isPanning = false;
+        viewport.classList.remove('is-panning');
+    };
+
+    viewport.addEventListener('pointerup', endPan);
+    viewport.addEventListener('pointerleave', endPan);
+    viewport.addEventListener('pointercancel', endPan);
+
+    app.mapBindingsInstalled = true;
+}

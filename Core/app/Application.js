@@ -93,6 +93,19 @@ class Application {
     }
 
     async start() {
+        const activeServer = this.store.getActiveServer();
+        const hasUsableServer = Boolean(
+            activeServer &&
+            String(activeServer.host || '').trim() &&
+            String(activeServer.port || '').trim() &&
+            String(activeServer.playerId || '').trim() &&
+            String(activeServer.playerToken || '').trim()
+        );
+
+        if (!hasUsableServer) {
+            return;
+        }
+
         if (!this.skipRustConnect) {
             try {
                 await this.connectionManager.start();

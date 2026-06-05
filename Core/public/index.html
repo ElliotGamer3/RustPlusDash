@@ -199,6 +199,12 @@
             color: var(--muted);
         }
 
+        .dcard-note {
+            font-size: 0.78rem;
+            line-height: 1.35;
+            color: var(--muted);
+        }
+
         .group-editor-head {
             align-items: flex-end;
         }
@@ -279,6 +285,156 @@
         }
 
         .sec-head h2 { font-size: 0.98rem; font-weight: 700; }
+
+        /* ── Map tab ─────────────────────────────────────────── */
+        .map-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .map-toolbar-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .map-viewport {
+            position: relative;
+            width: 100%;
+            max-height: 72vh;
+            overflow: hidden;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            background: #1f1a14;
+            cursor: grab;
+        }
+
+        .map-viewport.is-panning {
+            cursor: grabbing;
+        }
+
+        #map-canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+            transform-origin: 0 0;
+            user-select: none;
+        }
+
+        .map-filter-wrap {
+            display: grid;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .map-filter-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .map-filter-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 5px 10px;
+            background: var(--surface2);
+            font-size: 0.82rem;
+        }
+
+        .map-filter-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.35);
+            flex-shrink: 0;
+        }
+
+        .map-marker-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .map-marker-card {
+            background: linear-gradient(145deg, rgba(255,250,240,0.98), rgba(241,232,214,0.98));
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px 12px;
+            box-shadow: 0 2px 10px rgba(35,31,20,0.08);
+            display: grid;
+            gap: 8px;
+        }
+
+        .map-marker-card-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .map-marker-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.35);
+            flex-shrink: 0;
+        }
+
+        .map-marker-title-wrap {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .map-marker-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            line-height: 1.2;
+            margin: 0;
+            color: var(--ink);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .map-marker-subtitle {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .map-marker-grid {
+            font-size: 0.78rem;
+            font-weight: 700;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 3px 8px;
+            background: rgba(255,255,255,0.7);
+            color: var(--green2);
+        }
+
+        .map-marker-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .map-marker-meta span {
+            font-size: 0.75rem;
+            color: #3c3221;
+            border: 1px solid rgba(107,91,62,0.24);
+            border-radius: 999px;
+            padding: 2px 7px;
+            background: rgba(255,255,255,0.6);
+        }
 
         /* ── Toggle ──────────────────────────────────────────── */
         .toggle-wrap { display: flex; align-items: center; gap: 10px; }
@@ -480,6 +636,47 @@
         input[type=range] { padding: 4px 0; accent-color: var(--green); }
 
         .hint { font-size: 0.78rem; color: var(--muted); font-weight: 400; }
+
+        .setup-modal {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background: rgba(26, 21, 14, 0.62);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+        }
+
+        .setup-modal.is-open {
+            display: flex;
+        }
+
+        .setup-modal-panel {
+            width: min(720px, 100%);
+            background: linear-gradient(180deg, rgba(255,250,240,0.99), rgba(241,232,214,0.99));
+            border: 1px solid rgba(107,91,62,0.22);
+            border-radius: 18px;
+            box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+            padding: 22px;
+        }
+
+        .setup-modal-title {
+            font-size: 1.35rem;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+
+        .setup-modal-copy {
+            color: var(--muted);
+            line-height: 1.5;
+            margin-bottom: 18px;
+        }
+
+        body.server-setup-lock {
+            overflow: hidden;
+        }
     </style>
 </head>
 <body>
@@ -494,6 +691,34 @@
     </div>
 </header>
 
+<div id="server-setup-modal" class="setup-modal" aria-hidden="true">
+    <div class="setup-modal-panel" role="dialog" aria-modal="true" aria-labelledby="server-setup-title">
+        <div class="setup-modal-title" id="server-setup-title">Add your first server</div>
+        <div class="setup-modal-copy">
+            No servers are configured yet, so the dashboard cannot connect to Rust+.
+            Add a server now to unlock the app and begin registering devices.
+        </div>
+        <form id="server-setup-form" class="form-stack">
+            <div class="form-row">
+                <label class="field">Name<input type="text" name="name" required /></label>
+                <label class="field">Host<input type="text" name="host" required /></label>
+            </div>
+            <div class="form-row">
+                <label class="field">Port<input type="text" name="port" required /></label>
+                <label class="field">Player ID<input type="text" name="playerId" required /></label>
+            </div>
+            <label class="field">Player Token
+                <input type="password" name="playerToken" required autocomplete="off" />
+            </label>
+            <label class="field" style="display:flex;flex-direction:row;align-items:center;gap:8px;font-weight:400;">
+                <input type="checkbox" name="isDefault" checked style="width:auto;" />
+                Set as default server
+            </label>
+            <button type="submit" class="primary">Add Server</button>
+        </form>
+    </div>
+</div>
+
 <!-- ── Tab navigation ─────────────────────────────────────────── -->
 <nav class="tab-nav" role="tablist">
     <button type="button" class="tab-btn active" data-tab="overview">Overview</button>
@@ -502,6 +727,7 @@
     <button type="button" class="tab-btn"        data-tab="storage">Storage</button>
     <button type="button" class="tab-btn"        data-tab="alarms">Alarms</button>
     <button type="button" class="tab-btn"        data-tab="automation">Automation</button>
+    <button type="button" class="tab-btn"        data-tab="map">Map</button>
     <button type="button" class="tab-btn"        data-tab="settings">Settings</button>
 </nav>
 
@@ -900,6 +1126,43 @@
             </div>
         </div>
 
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     MAP
+════════════════════════════════════════════════════════════════ -->
+<div id="tab-map" class="tab-pane">
+    <div class="map-toolbar">
+        <button type="button" id="map-refresh-btn" class="primary" style="min-width:110px;">Refresh Map</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.86rem;cursor:pointer;">
+            <input type="checkbox" id="map-autorefresh" style="width:auto;" />
+            Auto-refresh markers (5s)
+        </label>
+        <div class="map-toolbar-group">
+            <button type="button" id="map-zoom-out-btn" title="Zoom out">-</button>
+            <button type="button" id="map-zoom-in-btn" title="Zoom in">+</button>
+            <button type="button" id="map-reset-view-btn" title="Reset view">Reset View</button>
+        </div>
+        <span id="map-status" style="font-size:0.82rem;color:var(--muted);">Not loaded</span>
+    </div>
+
+    <div id="map-viewport" class="map-viewport">
+        <canvas id="map-canvas"></canvas>
+    </div>
+
+    <div class="map-filter-wrap">
+        <div class="map-toolbar-group">
+            <strong style="font-size:0.86rem;">Marker Filters</strong>
+            <button type="button" id="map-filter-all-btn">Show All</button>
+            <button type="button" id="map-filter-none-btn">Hide All</button>
+        </div>
+        <div id="map-filter-list" class="map-filter-list"></div>
+    </div>
+
+    <div style="margin-top:16px;">
+        <div class="sec-head"><h2>Live Markers</h2></div>
+        <div id="map-marker-list" class="map-marker-list"></div>
     </div>
 </div>
 

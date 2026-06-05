@@ -117,9 +117,12 @@ function run() {
         store.removeGroup(switchGroup.id);
         store.removeDevice(cameraDevice.id);
 
+        const removedCount = store.removeDevicesByServer(server.id);
+        assert.equal(removedCount, 2, 'server wipe should remove remaining server devices');
+
         const finalState = store.getState();
-        assert.ok(finalState.devices.some((device) => device.id === switchDevice.id), 'switch should remain');
-        assert.ok(finalState.groups.some((group) => group.id === storageGroup.id), 'storage group should remain');
+        assert.ok(finalState.devices.every((device) => device.serverId !== server.id), 'server devices should be cleared');
+        assert.equal(finalState.groups.find((group) => group.id === storageGroup.id).deviceIds.length, 0, 'storage group should be emptied');
         assert.ok(finalState.requirements.length === 0, 'requirement should be removed');
 
         console.log('Store behavior test passed');

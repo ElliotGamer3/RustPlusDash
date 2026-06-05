@@ -33,6 +33,14 @@ class DeviceService {
         this.store.removeDevice(deviceId);
     }
 
+    async clearDevicesForServer(serverId) {
+        const devices = this.store.getDevices(serverId);
+        const removed = this.store.removeDevicesByServer(serverId);
+
+        await this.connectionManager.clearServerDevices(serverId, devices);
+        return removed;
+    }
+
     updateDevice(deviceId, partial) {
         return this.store.updateDevice(deviceId, partial);
     }
