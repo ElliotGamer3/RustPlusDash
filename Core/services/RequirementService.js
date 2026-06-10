@@ -18,6 +18,16 @@ class RequirementService {
                 });
             });
         });
+        this.eventBus.on('storage:ungrouped-updated', (event) => {
+            this.#evaluateGroup('__ungrouped__', event.metrics).catch((error) => {
+                this.notificationService.log({
+                    category: 'requirement-error',
+                    visible: false,
+                    message: error.message,
+                    groupId: '__ungrouped__'
+                });
+            });
+        });
     }
 
     addRequirement(payload) {

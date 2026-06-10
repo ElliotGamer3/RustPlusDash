@@ -1,4 +1,5 @@
 const RustPlus = require('@liamcottle/rustplus.js');
+const { writeServerLog } = require('../utils');
 
 class RustConnectionManager {
     constructor({ store, eventBus, rateLimitCoordinator }) {
@@ -9,8 +10,13 @@ class RustConnectionManager {
         this.cameraRecords = new Map();
         // Map image cache: serverId -> { data, cachedAt }  (5-min TTL, 5 tokens to fetch)
         this.mapImageCache = new Map();
+        this.mapImageCacheTTL = 5 * 60 * 1000; // 5 minutes
         // Server info cache: serverId -> { data, cachedAt } (5-min TTL, 1 token to fetch)
         this.serverInfoCache = new Map();
+        this.serverInfoCacheTTL = 5 * 60 * 1000; // 5 minutes
+        // Team info cache: serverId -> { data, cachedAt } (5-min TTL, 1 token to fetch)
+        this.teamInfoCache = new Map();
+        this.teamInfoCacheTTL = 5 * 60 * 1000; // 5 minutes
     }
 
     async start() {
@@ -107,6 +113,15 @@ class RustConnectionManager {
         return this.#waitForConnection(record.readyPromise);
     }
 
+    async logInvokableMethods(serverId) {
+        const record = await this.#getReadyConnection(serverId);
+        // Get all of the defined protobuf methods that the Rust+ client can invoke based on the proto definition
+        const invokables = Object.keys(Object.getPrototypeOf(record.client)).filter((key) => {
+            return typeof record.client[key] === 'message' && key !== 'constructor';
+        });
+        return invokables;
+    }
+
     async primeEntity(serverId, entityId) {
         const record = await this.#getReadyConnection(serverId);
         const normalizedId = String(entityId);
@@ -150,9 +165,36 @@ class RustConnectionManager {
         return response;
     }
 
-    async getMap(serverId) {
+    async getTeamMessageHistory(serverId) {
+        const record = await this.#getReadyConnection(serverId);
+        const response = await this.rateLimitCoordinator.enqueue(serverId, 1, () => {
+            return this.#invoke(record.client.getTeamChat.bind(record.client), []);
+        });
+    }
+
+    async getTeamInfo(serverId, { forceRefresh = false } = {}) {
+        const cached = this.teamInfoCache.get(serverId);
+        if (!forceRefresh && cached && Date.now() - cached.cachedAt < this.teamInfoCacheTTL) {
+            return cached.data;
+        }
+        
+        const record = await this.#getReadyConnection(serverId);
+        const response = await this.rateLimitCoordinator.enqueue(serverId, 1, () => {
+            return this.#invoke(record.client.getTeamInfo.bind(record.client), []);
+        });
+        const data = response?.response || null;
+        this.teamInfoCache.set(serverId, { data, cachedAt: Date.now() });
+        return data;
+    }
+
+    async getTeamMembers(serverId) {
+        const teamInfo = await this.getTeamInfo(serverId);
+        return teamInfo?.members || [];
+    }
+
+    async getMap(serverId, { forceRefresh = false } = {}) {
         const cached = this.mapImageCache.get(serverId);
-        if (cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) {
+        if (cached && Date.now() - cached.cachedAt < this.mapImageCacheTTL && !forceRefresh) {
             return cached.data;
         }
         const record = await this.#getReadyConnection(serverId);
@@ -174,7 +216,7 @@ class RustConnectionManager {
 
     async getServerInfo(serverId, { forceRefresh = false } = {}) {
         const cached = this.serverInfoCache.get(serverId);
-        if (!forceRefresh && cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) {
+        if (!forceRefresh && cached && Date.now() - cached.cachedAt < this.serverInfoCacheTTL) {
             return cached.data;
         }
 
@@ -381,13 +423,21 @@ class RustConnectionManager {
             entityId: String(entityChanged.entityId),
             payload: entityChanged.payload || {}
         });
+        writeServerLog('info', serverId, `Entity ${entityChanged.entityId} changed: ${JSON.stringify(entityChanged.payload)}`);
+
     }
 
     #invoke(method, args) {
         return new Promise((resolve, reject) => {
             try {
+                writeServerLog('info', 'Invoke', `Invoking method with args: ${method.name}, ${JSON.stringify(args)}`);
+            } catch (error) {
+                console.warn('Failed to log method invocation:', error.message);
+            }
+            try {
                 method(...args, (message) => resolve(message));
             } catch (error) {
+                writeServerLog('error', 'InvokeError', `Method invocation failed: ${error.message}`);
                 reject(error);
             }
         });
@@ -404,6 +454,8 @@ class RustConnectionManager {
 
         const message = String(appError?.message || '').trim();
         const code = appError?.code;
+
+        writeServerLog('error', 'AppError', `Error code: ${code}, message: ${message}`);
 
         if (message && code !== undefined && code !== null) {
             return `${message} (code ${code})`;

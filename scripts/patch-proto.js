@@ -35,6 +35,8 @@ const before = src;
 // Make all fields in SellOrder optional — the Rust game server omits various
 // fields depending on the vending machine state. We scope the replacement to
 // the SellOrder block to avoid touching fields in other messages.
+// Patch All required fields to optional in most of the messages, as the game server is inconsistent in what it sends and protobufjs throws if any required field is missing. This is a broad patch but should be safe as it only changes 'required' to 'optional' for primitive fields (int32, bool, float, string, uint32) and does not affect message or repeated fields which have different decoding rules.
+
 
 const toPatch = ["SellOrder", "AppInfo"];
 toPatch.forEach((messageName) => {
@@ -56,6 +58,24 @@ toPatch.forEach((messageName) => {
     }
 });
 
+const allOptionalRegex = /message (\w+) \{([\s\S]*?)\}/g;
+src = src.replace(allOptionalRegex, (block, messageName) => {
+    const patchedBlock = block.replace(
+        /\brequired\b(?=\s+(int32|bool|float|string|uint32)\s)/g,
+        "optional",
+    );
+    return patchedBlock;
+});
+
+if (src === before) {
+    console.log(`[patch-proto] Proto already fully patched, nothing to do.`);
+} else {
+    fs.writeFileSync(protoPath, src, "utf8");
+    console.log(
+        `[patch-proto] Patched proto: all primitive fields are now optional.`,
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Patch 2: wrap AppMessage.decode() in rustplus.js with a try/catch so that
 // a single bad protobuf message cannot bring down the whole process.
@@ -72,7 +92,7 @@ if (jsSrc.includes(PATCH_MARKER)) {
     const newDecode =
         "            this.websocket.on('message', (data) => { " +
         PATCH_MARKER +
-        "\n\n                // decode received message\n                var message;\n                try {\n                    message = this.AppMessage.decode(data);\n                } catch (decodeErr) {\n                    if (decodeErr && decodeErr.instance !== undefined) {\n                        const _fs = require('fs'), _path = require('path');\n                        const _log = _path.resolve(__dirname, '../../proto-decode-errors.jsonl');\n                        const _entry = { timestamp: new Date().toISOString(), error: decodeErr.message, instance: decodeErr.instance };\n                        try { _fs.appendFileSync(_log, JSON.stringify(_entry) + '\\n'); } catch {}\n                        console.warn('[proto] Decode error (saved to proto-decode-errors.jsonl):', decodeErr.message);\n                    } else {\n                        console.warn('[proto] Decode error:', decodeErr && decodeErr.message);\n                    }\n                    return;\n                }";
+        "\n\n                // decode received message\n                var message;\n                try {\n                    message = this.AppMessage.decode(data);\n                } catch (decodeErr) {\n                    if (decodeErr && decodeErr.instance !== undefined) {\n                        const _fs = require('fs'), _path = require('path');\n                        const _log = _path.resolve(__dirname, '../../../logs/proto-decode-errors.jsonl');\n                        const _entry = { timestamp: new Date().toISOString(), error: decodeErr.message, instance: decodeErr.instance };\n                        try { _fs.appendFileSync(_log, JSON.stringify(_entry) + '\\n'); } catch {}\n                        console.warn('[proto] Decode error (saved to proto-decode-errors.jsonl):', decodeErr.message);\n                    } else {\n                        console.warn('[proto] Decode error:', decodeErr && decodeErr.message);\n                    }\n                    return;\n                }";
     const oldEmit =
         "                // fire message event for received messages that aren't handled by callback\n                this.emit('message', this.AppMessage.decode(data));";
     const newEmit =

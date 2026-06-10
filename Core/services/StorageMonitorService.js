@@ -123,6 +123,12 @@ class StorageMonitorService {
         if (!monitor) {
             return;
         }
+        if (payload.value) {
+            this.notificationService.log({
+                category: 'storage',
+                message: `Storage monitor will send updates for device ${monitor.name} (${monitor.id})`
+            });
+        }
 
         const items = Array.isArray(payload.items) ? payload.items : [];
         const normalizedItems = items.map((item) => ({
@@ -159,6 +165,24 @@ class StorageMonitorService {
             entityId,
             snapshot
         });
+
+        // Allow showing storage monitors without a group 
+        const monitorsWithoutGroup = this.store.getDevicesByType(serverId, 'storage-monitor').filter((device) => {
+            const groups = this.store.getGroups(serverId).filter((group) => group.deviceIds.includes(device.id));
+            return groups.length === 0;
+        });
+
+        if (monitorsWithoutGroup.length > 0) {
+            this.eventBus.emit('storage:ungrouped-updated', {
+                serverId,
+                monitors: monitorsWithoutGroup.map((device) => ({
+                    id: device.id,
+                    name: device.name,
+                    lastKnownState: device.lastKnownState,
+                    lastPayload: device.lastPayload
+                }))
+            });
+        }
 
         const relevantGroups = this.store.getGroups(serverId).filter((group) => {
             return group.type === 'storage-group' && group.deviceIds.includes(monitor.id);

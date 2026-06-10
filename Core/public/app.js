@@ -953,6 +953,19 @@ pairingTestEntityBtn.addEventListener('click', guard(async () => {
     toast('Test entity pairing ingested', false);
 }));
 
+// ─── Dev Testing Buttons ───────────────────────────────────────────────────────────────
+document.getElementById('dev-test-invokables-btn').addEventListener('click', guard(async () => {
+    try {
+        // Try getting invokable actions using the rust backend's discovery endpoint
+        const invokables = await api('/api/invokables');
+        console.log('Invokable actions:', invokables);
+        toast('Invokables fetched successfully. Check console for details.', false);
+    } catch (err) {
+        console.error('Error fetching invokables:', err);
+        toast('Failed to fetch invokables. Check console for details.', true);
+    }
+}));
+
 // ─── Storage group select ─────────────────────────────────────────────────────
 document.getElementById('storage-group-select').addEventListener('change', async e => {
     app.selectedStorageGroupId = e.target.value || null;

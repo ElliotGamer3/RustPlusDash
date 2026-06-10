@@ -116,6 +116,7 @@ class Application {
                     message: `Rust+ startup connect failed: ${error.message}`
                 });
             }
+            this.connectionManager.logInvokableMethods(this.store.getActiveServer().id);
         }
 
         try {

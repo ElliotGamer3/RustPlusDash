@@ -110,6 +110,19 @@ class AppStateStore {
         return devices.filter((device) => device.serverId === serverId);
     }
 
+    getDevicesByType(serverId = null, type = null) {
+        let devices = this.getDevices(serverId);
+        if (type) {
+            try {
+                devices = devices.filter((device) => device.type === type);
+            } catch (error) {
+                console.error(`Returning add devices after Error filtering devices by type "${type}":`, error);
+                return devices;
+            }
+        }
+        return devices;
+    }
+
     getGroups(serverId = null) {
         const groups = this.state.groups;
         if (!serverId) {
