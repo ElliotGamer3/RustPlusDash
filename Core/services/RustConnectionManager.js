@@ -57,6 +57,17 @@ class RustConnectionManager {
         }
 
         if (!this.#hasConnectionInfo(server)) {
+            // Check if the server is an undefined/default server profile which is missing connection info because the user hasn't set it up yet, and if so throw a more specific error message
+            if (server.id === "default-server") {
+                this.eventBus.emit('no-servers-modal:show');
+                return;
+            }
+            const isDefaultProfile = !server.host && !server.port && !server.playerId && !server.playerToken;
+            if (isDefaultProfile && this.store.getState().servers.length === 1) {
+                // Emit the no servers modal event for the UI to handle since this is likely the default profile that was auto-created and the user just needs to enter their server details
+                this.eventBus.emit('no-servers-modal:show');
+                throw new Error('No server connection info found. Please enter your server details to connect.');
+            }
             throw new Error('Server profile is incomplete. Add host, port, player ID, and player token first.');
         }
 
@@ -239,6 +250,15 @@ class RustConnectionManager {
 
     async checkServerConnection(serverId) {
         try {
+            if(serverId === "default-server") {
+                return {
+                    ok: false,
+                    status: 'idle',
+                    lastError: null,
+                    warning: null,
+                    info: null
+                };
+            }
             await this.ensureServerConnection(serverId);
             const info = await this.getServerInfo(serverId, { forceRefresh: true });
             const record = this.connections.get(serverId);

@@ -149,14 +149,38 @@ class PairingService {
     }
 
     #applyServerPairing(normalized, source) {
-        const existingServer = this.#findServer(normalized);
+        let existingServer = null;
+        if (this.store.getState().servers.length === 1 && !this.store.getState().servers[0].host) {
+            existingServer = this.store.getState().servers[0];
+            existingServer.host = normalized.host;
+            existingServer.port = normalized.port;
+            existingServer.playerId = normalized.playerId;
+            existingServer.playerToken = normalized.playerToken;
+            // Add a new server if the existing is the empty default
+            this.store.addServer({
+                name: normalized.name || `Server ${normalized.host}:${normalized.port}`,
+                host: normalized.host,
+                port: normalized.port,
+                playerId: normalized.playerId,
+                playerToken: normalized.playerToken,
+                isDefault: true
+            });
+            // Remove the empty default server after adding the new one to ensure there's always at least one server
+            try {
+                this.store.removeServer('default-server');
+            } catch (error) {
+                console.error('Error removing default server after pairing notification:', error);
+            }
+        } else {
+            existingServer = this.#findServer(normalized) || null;
+        }
         const server = existingServer || this.store.addServer({
             name: normalized.name || `Server ${normalized.host}:${normalized.port}`,
             host: normalized.host,
             port: normalized.port,
             playerId: normalized.playerId,
             playerToken: normalized.playerToken,
-            isDefault: false
+            isDefault: (this.store.getState().servers.length === 0 && !this.store.getState().settings.activeServerId()) ? true : false
         });
 
         const session = this.store.addPairingSession({

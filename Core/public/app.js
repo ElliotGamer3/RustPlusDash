@@ -105,6 +105,7 @@ const sid  = () => app.snapshot?.settings?.activeServerId;
 const devs = (type) => (app.snapshot?.devices  || []).filter(d => d.serverId === sid() && (!type || d.type === type));
 const grps = (type) => (app.snapshot?.groups   || []).filter(g => g.serverId === sid() && (!type || g.type === type));
 const conn = (id)   => (app.snapshot?.connectionStates || []).find(c => c.serverId === (id ?? sid()));
+// const tokenStatus = () => app.snapshot?.settings?.tokenStatus ? { linked: true } : { linked: false };
 
 function hasUsableServer() {
     return (app.snapshot?.servers || []).some((server) => {
@@ -736,7 +737,34 @@ function renderSettings() {
     }).join('');
 
     renderPairingListenerStatus(app.snapshot?.pairingListener || null);
+    renderSteamLinkStatus();
 }
+
+async function renderSteamLinkStatus() {
+    const pill = document.getElementById('steam-link-pill');
+    const meta = document.getElementById('steam-link-meta');
+
+    if (!pill || !meta) {
+        return;
+    }
+    
+    const status = await api('/api/steam-link/status', 'GET');
+    const normalizedStatus = String(status?.status || 'unknown').toLowerCase();
+    const isLinked = normalizedStatus === 'linked';
+    const isUnlinked = normalizedStatus === 'unlinked';
+    const isExpired = normalizedStatus === 'expired';
+
+    pill.className = `pill ${isLinked ? 'on' : isUnlinked ? 'off' : isExpired ? 'alert' : 'unknown'}`;
+    pill.textContent = isLinked
+        ? 'Linked'
+        : isUnlinked
+            ? 'Unlinked'
+            : isExpired
+                ? 'Re-link Required'
+                : 'Unknown';
+    meta.textContent = status?.ttl ? `TTL: ${(status.ttl)} Days` : 'No link status available';
+}
+
 
 function renderPairingListenerStatus(status) {
     const pill = document.getElementById('pairing-listener-pill');
@@ -869,17 +897,47 @@ document.getElementById('rotation-select-btn').addEventListener('click', guard(a
 }));
 
 // ─── Pairing listener controls ───────────────────────────────────────────────
+const noServersPairingStartBtn = document.getElementById('no-server-pairing-start-btn');
+
 const pairingStartBtn = document.getElementById('pairing-start-btn');
 const pairingStopBtn = document.getElementById('pairing-stop-btn');
 const pairingRefreshBtn = document.getElementById('pairing-refresh-btn');
 const pairingTestServerBtn = document.getElementById('pairing-test-server-btn');
 const pairingTestEntityBtn = document.getElementById('pairing-test-entity-btn');
 
+const steamlinkStatusBtn = document.getElementById('link-steam-account-btn');
+const steamlinkRefreshBtn = document.getElementById('refresh-steam-link-btn');
+
+steamlinkStatusBtn.addEventListener('click', guard(async () => {
+    await refreshSteamLinkStatus();
+    toast('Steam Link status refreshed', false);
+}));
+
+steamlinkRefreshBtn.addEventListener('click', guard(async () => {
+    await api('/api/steam-link/status', 'GET');
+    await refreshSteamLinkStatus();
+    toast('Steam Link status refreshed', false);
+}));
+
 async function refreshPairingListenerStatus() {
     const status = await api('/api/pairing/listener/status');
     renderPairingListenerStatus(status);
     return status;
 }
+
+async function refreshSteamLinkStatus() {
+    const status = await api('/api/steam-link/status');
+    renderSteamLinkStatus(status);
+    return status;
+}
+
+noServersPairingStartBtn.addEventListener('click', guard(async () => {
+    const configPath = document.getElementById('pairing-config-path').value.trim();
+    const status = await api('/api/pairing/listener/start', 'POST', {
+        configPath: configPath || undefined,
+        autoPair: true
+    });
+}));
 
 pairingStartBtn.addEventListener('click', guard(async () => {
     const configPath = document.getElementById('pairing-config-path').value.trim();
@@ -1093,6 +1151,42 @@ document.getElementById('requirement-form').addEventListener('submit', guard(asy
     syncReqFields();
     toast('Requirement created', false);
 }));
+
+document.getElementById('no-server-link-steam-account-btn').addEventListener('click', guard(async () => {
+    // navigate to the /register route when pressed in the background
+    try {
+        window.open('/register', '_self');
+        toast('Opened Steam account linking page in a new tab', false);
+    }
+    catch (err) {
+        console.error('Error opening Steam account linking page:', err);
+        toast('Failed to open Steam account linking page. Check console for details.', true);
+    }
+}));
+
+document.getElementById('link-steam-account-btn').addEventListener('click', guard(async () => {
+    // navigate to the /register route when pressed in the background
+    try {
+        window.open('/register', '_self');
+        toast('Opened Steam account linking page in a new tab', false);
+    }
+    catch (err) {
+        console.error('Error opening Steam account linking page:', err);
+        toast('Failed to open Steam account linking page. Check console for details.', true);
+    }
+}));
+
+// Update info text next to the link-steam-account button based on if the user needs to link their account or not
+function updateSteamLinkingInfo() {
+    const infoEl = document.getElementById('steam-link-info');
+    if (!infoEl) {
+        return;
+    }
+    const needsLinking = app.snapshot?.tokenStatus?.linked !== true;
+    infoEl.textContent = needsLinking
+        ? 'You need to link your Steam account to use certain features. Click the button to get started.'
+        : 'Your Steam account is linked. You have access to all features!';
+}
 
 // ─── Inline device rename ─────────────────────────────────────────────────────
 function startRenameDevice(deviceId, triggerBtn) {
