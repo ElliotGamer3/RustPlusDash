@@ -6,7 +6,9 @@ function getGuiPaths() {
 	return {
 		publicDir,
 		indexFile: path.join(publicDir, 'index.html'),
-		appFile: path.join(publicDir, 'app.js')
+		appFile: path.join(publicDir, 'app.js'),
+		registerHtml: path.join(publicDir, 'register.html'),
+		registerFile: path.join(publicDir, 'register.js'),
 	};
 }
 

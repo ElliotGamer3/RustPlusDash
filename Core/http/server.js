@@ -13,6 +13,7 @@ const requirementRoutes  = require('./routes/requirementRoutes');
 const teamRoutes         = require('./routes/teamRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const mapRoutes          = require('./routes/mapRoutes');
+const registerRoutes      = require('./routes/registerRoutes');
 
 const allRouteModules = [
     coreRoutes,
@@ -26,6 +27,7 @@ const allRouteModules = [
     teamRoutes,
     notificationRoutes,
     mapRoutes,
+    registerRoutes,
 ];
 
 const exactRoutes  = new Map(allRouteModules.flatMap(m => m.exact));

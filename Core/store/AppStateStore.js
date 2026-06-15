@@ -18,7 +18,8 @@ class AppStateStore {
             settings: {
                 activeServerId: defaultServer.id,
                 defaultServerId: defaultServer.id,
-                users: []
+                users: [],
+                tokenStatus: false
             },
             servers: [defaultServer],
             devices: [],
@@ -197,6 +198,31 @@ class AppStateStore {
 
             draft.settings.users.push(preference);
             return preference;
+        });
+    }
+
+    updateServer(serverId, nextPartialState) {
+        return this.#commit((draft) => {
+            const server = draft.servers.find((item) => item.id === serverId);
+
+            if (!server) {
+                throw new Error(`Unknown server: ${serverId}`);
+            }
+
+            Object.assign(server, nextPartialState);
+
+            if (nextPartialState.isDefault) {
+                draft.settings.defaultServerId = serverId;
+                draft.servers = draft.servers.map((item) => ({
+                    ...item,
+                    isDefault: item.id === serverId
+                }));
+            } else if (server.isDefault && nextPartialState.isDefault === false) {
+                draft.settings.defaultServerId = null;
+                server.isDefault = false;
+            }
+
+            return server;
         });
     }
 

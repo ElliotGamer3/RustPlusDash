@@ -13,6 +13,7 @@ const AlarmService = require('../services/AlarmService');
 const StorageMonitorService = require('../services/StorageMonitorService');
 const RequirementService = require('../services/RequirementService');
 const TeamMessageService = require('../services/TeamMessageService');
+const RustPlusRegisterService = require('../services/RustPlusRegisterService');
 
 class Application {
     constructor({ dataFilePath, host, port, skipRustConnect = false }) {
@@ -22,6 +23,10 @@ class Application {
         this.eventBus = new EventBus();
         this.store = new AppStateStore({ dataFilePath, eventBus: this.eventBus });
         this.rateLimitCoordinator = new RateLimitCoordinator({ eventBus: this.eventBus });
+        this.rustPlusRegisterService = new RustPlusRegisterService({
+            store: this.store,
+            eventBus: this.eventBus
+        });
         this.connectionManager = new RustConnectionManager({
             store: this.store,
             eventBus: this.eventBus,
@@ -103,6 +108,11 @@ class Application {
         );
 
         if (!hasUsableServer) {
+            this.notificationService.log({
+                category: 'startup',
+                visible: true,
+                message: 'No active server with complete details found. Please link your Steam account or add a server manually.',
+            });
             return;
         }
 
@@ -165,7 +175,8 @@ class Application {
             alarmService: this.alarmService,
             storageMonitorService: this.storageMonitorService,
             requirementService: this.requirementService,
-            teamMessageService: this.teamMessageService
+            teamMessageService: this.teamMessageService,
+            rustPlusRegisterService: this.rustPlusRegisterService
         };
     }
 }

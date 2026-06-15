@@ -5,9 +5,12 @@ node_modules/
 # Runtime state — contains sensitive credentials (playerToken, playerId, server IP)
 # Auto-recreated on startup if missing
 Core/data/app-state.json
+# Contains the Steam auth token obtained during registration, which is sensitive information and allows access to the Rust+ API for a user.
+Core/data/steam-auth-token.json
 
 # RustPlus auth config — contains FCM credentials, auth token, and push token
 rustplus.config.json
+rustplus.config.og.json
 
 # Proto decode error log — local debug artifact, not for source control
 proto-decode-errors.jsonl

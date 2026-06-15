@@ -1,0 +1,14 @@
+{
+    "desc":"These values are defined by rust and are not user specific. They are used to get required info inorder to work with the rustplus api.",
+    "projectId":"rust-companion-app",
+    "expoProjectId": "49451aca-a822-41e6-ad59-955718d0ff9c",
+    "apiKey":"AIzaSyB5y2y-Tzqb4-I4Qnlsh_9naYv_TD8pCvY",
+    "gcmSenderId":"976529667804",
+    "gmsAppId":"1:976529667804:android:d6f1ddeb4403b338fea619",
+    "androidPackageName":"com.facepunch.rust.companion",
+    "androidPackageCert":"E28D05345FB78A7A1A63D70F4A302DBF426CA5AD",
+    "rustPlusDeviceId":"rustplus.js",
+    "authDomain":"",
+    "senderId":"",
+    "appId":"com.facepunch.rust.companion"
+}
