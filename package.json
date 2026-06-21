@@ -6,6 +6,7 @@
   "scripts": {
     "postinstall": "node scripts/patch-proto.js",
     "start": "node Core/main.js",
+    "dev": "node --env-file=.env.dev --watch Core/main.js -1",
     "test:store": "node Tests/StoreBehaviorTest.js",
     "test:teamchat": "node Tests/TeamChatTest.js",
     "test:api": "node Tests/ApiIntegrationTest.js",
