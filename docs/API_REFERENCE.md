@@ -108,6 +108,41 @@ Request:
 ```
 
 ## Devices
+### POST /api/devices/export
+Exports all paired devices as a JSON file that can be imported using the `/api/devices/import` endpoint.
+Request:
+```json
+{
+  "serverId": "default-server",
+  "types": ["switch", "alarm"],
+  "includeMetadata": true
+}
+```
+
+### POST /api/devices/import
+Imports devices from a JSON export created by the `/api/devices/export` endpoint. This allows users to bulk import devices without needing to pair each one manually.
+Request:
+```json
+{
+  "serverId": "default-server",
+  "devices": [
+    {
+      "type": "switch",
+      "name": "Furnace Block",
+      "entityId": "1234567",
+      "cameraId": null,
+      "metadata": {}
+    },
+    {
+      "type": "alarm",
+      "name": "Main Door Alarm",
+      "entityId": "2345678",
+      "cameraId": null,
+      "metadata": {}
+    }
+  ]
+}
+```
 
 ### POST /api/devices
 Add typed device.

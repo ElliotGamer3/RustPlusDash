@@ -2,6 +2,7 @@ const EventBus = require('./EventBus');
 const AppStateStore = require('../store/AppStateStore');
 const RustConnectionManager = require('../services/RustConnectionManager');
 const RateLimitCoordinator = require('../services/RateLimitCoordinator');
+const ServerService = require('../services/ServerService');
 const DeviceService = require('../services/DeviceService');
 const NotificationService = require('../services/NotificationService');
 const PairingService = require('../services/PairingService');
@@ -31,6 +32,10 @@ class Application {
             store: this.store,
             eventBus: this.eventBus,
             rateLimitCoordinator: this.rateLimitCoordinator
+        });
+        this.serverService = new ServerService({
+            store: this.store,
+            eventBus: this.eventBus
         });
         this.deviceService = new DeviceService({
             store: this.store,
