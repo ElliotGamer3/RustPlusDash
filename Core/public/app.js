@@ -2130,3 +2130,110 @@ function initMapInteractions() {
 
     app.mapBindingsInstalled = true;
 }
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        toast('Copied to clipboard', false);
+    }).catch(() => {
+        toast('Failed to copy', true);
+    });
+}
+
+function saveToFile(content, type = 'application/json', filename = 'data.json') {
+    // prompt user to save content as a file
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    // create a temporary link to trigger the download
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function readFromUserFile(file, type = 'application/json', callback) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            if (type === 'application/json') {
+                const data = JSON.parse(event.target.result);
+                callback(null, data);
+            } else {
+                callback(null, event.target.result);
+            }
+        } catch (err) {
+            callback(err);
+        }
+    };
+    reader.onerror = () => {
+        callback(new Error('Failed to read file'));
+    };
+    reader.readAsText(file);
+}
+
+function attachHandler(selector, method, handler) {
+    const input = document.querySelectorAll(selector);
+    input.forEach((el) => {
+        el.addEventListener(method, guard(handler));
+    });
+}
+
+function openFileDialog(accept = '*/*', callback) {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = accept;
+    fileInput.onchange = () => {
+        if (fileInput.files.length === 0) return;
+        const file = fileInput.files[0];
+        callback(file);
+    };
+    fileInput.click();
+}
+
+function importInteractions() {
+    attachHandler('#import-devices-btn', 'click', async () => {
+        openFileDialog('application/json', (file) => {
+            readFromUserFile(file, 'application/json', (err, data) => {
+                if (err) {
+                    toast('Failed to read file', true);
+                    return;
+                }
+                if (!data || typeof data !== 'object') {
+                    toast('Invalid file format', true);
+                    return;
+                }
+                api('/api/devices/import', 'POST', { devices: data.devices || [] }).then(() => {
+                    toast('Devices imported successfully', false);
+                }).catch(() => {
+                    toast('Failed to import devices', true);
+                });
+            });
+        });
+    });
+}
+importInteractions();
+
+function exportInteractions() {
+    attachHandler('#export-devices-btn', 'click', async () => {
+        try {
+            // Use the active serverid
+            const serverId = sid();
+            if (!serverId) {
+                toast('No server selected', true);
+                return;
+            }
+            const data = await api(`/api/devices/export`, 'POST', {
+                    "serverId": serverId
+             });
+            const json = JSON.stringify(data, null, 2);
+            saveToFile(json, 'application/json', `devices_${serverId}_${Date.now()}.json`);
+        } catch (err) {
+            console.error('Export failed', err);
+            toast('Failed to export devices', true);
+        }
+    });
+}
+
+exportInteractions();

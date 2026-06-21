@@ -5,6 +5,7 @@ node_modules/
 # Runtime state — contains sensitive credentials (playerToken, playerId, server IP)
 # Auto-recreated on startup if missing
 Core/data/app-state.json
+Core/data/app-state.og.json
 # Contains the Steam auth token obtained during registration, which is sensitive information and allows access to the Rust+ API for a user.
 Core/data/steam-auth-token.json
 
@@ -21,6 +22,7 @@ logs/
 #ignore environment variable files that may contain sensitive information
 .env
 .env.local
+.env.dev
 
 #ignore agent stuff
 AGENTS.md

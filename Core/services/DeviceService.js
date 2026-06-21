@@ -33,6 +33,14 @@ class DeviceService {
         this.store.removeDevice(deviceId);
     }
 
+    getDevices(serverId = null) {
+        if (serverId) {
+            return this.store.getDevices(serverId);
+        }
+        return this.store.getState().devices;
+    }
+
+
     async clearDevicesForServer(serverId) {
         const devices = this.store.getDevices(serverId);
         const removed = this.store.removeDevicesByServer(serverId);
